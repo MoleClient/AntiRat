@@ -70,17 +70,23 @@ public final class AntiRatThreatScreen extends Screen {
             }
         }
 
-        int panelWidth = Math.min(768, width - 32);
-        int panelHeight = Math.min(432, height - 32);
-        if (panelWidth < 320) panelWidth = width - 16;
-        if (panelHeight < 260) panelHeight = height - 16;
+        float layoutScale = layoutScale(width, height);
+        int layoutWidth = Math.max(1, Math.round(width / layoutScale));
+        int layoutHeight = Math.max(1, Math.round(height / layoutScale));
+        context.getMatrices().push();
+        context.getMatrices().scale(layoutScale, layoutScale, 1.0F);
 
-        int targetX = (width - panelWidth) / 2;
-        int targetY = (height - panelHeight) / 2;
-        int panelY = (int) lerp(height + 24, targetY, easeOutCubic(progress));
+        int panelWidth = Math.min(768, layoutWidth - 32);
+        int panelHeight = Math.min(432, layoutHeight - 32);
+        if (panelWidth < 320) panelWidth = layoutWidth - 16;
+        if (panelHeight < 260) panelHeight = layoutHeight - 16;
+
+        int targetX = (layoutWidth - panelWidth) / 2;
+        int targetY = (layoutHeight - panelHeight) / 2;
+        int panelY = (int) lerp(layoutHeight + 24, targetY, easeOutCubic(progress));
 
         // A dim layer avoids the once-per-frame blur crash caused by rendering a second background.
-        context.fill(0, 0, width, height, ((int) (145 * progress) << 24));
+        context.fill(0, 0, layoutWidth, layoutHeight, ((int) (145 * progress) << 24));
         context.fill(targetX, panelY, targetX + panelWidth, panelY + panelHeight, 0xF2171920);
         context.fill(targetX, panelY, targetX + 5, panelY + panelHeight,
                 event.blocked() ? 0xFFFF3354 : 0xFFFFB547);
@@ -98,7 +104,7 @@ public final class AntiRatThreatScreen extends Screen {
         int renderedLogoSize = badgeSize - logoInset * 2;
         if (logoReady) {
             context.drawTexture(RenderLayer::getGuiTextured, LOGO, contentX + logoInset, contentY + logoInset,
-                    0.0F, 0.0F, renderedLogoSize, renderedLogoSize, 256, 256);
+                    0.0F, 0.0F, renderedLogoSize, renderedLogoSize, 256, 256, 256, 256);
         }
 
         TextRenderer renderer = textRenderer;
@@ -131,9 +137,12 @@ public final class AntiRatThreatScreen extends Screen {
         drawSection(context, renderer, "Quick tip", event.tip(), contentX, detailY, textWidth);
         detailY += 48;
         drawEvidence(context, renderer, contentX, detailY, textWidth);
+        boolean frameComplete = progress >= 0.99F && logoReady
+                && evidenceBottom(detailY) <= panelY + panelHeight - 8;
 
+        context.getMatrices().pop();
         super.render(context, mouseX, mouseY, deltaTicks);
-        if (logoReady) lastRenderedEventId = event.id();
+        if (frameComplete) lastRenderedEventId = event.id();
     }
 
     private int drawPair(DrawContext context, TextRenderer renderer, String label, String value,
@@ -194,6 +203,15 @@ public final class AntiRatThreatScreen extends Screen {
     private static float easeOutCubic(float value) {
         float inverse = 1.0F - value;
         return 1.0F - inverse * inverse * inverse;
+    }
+
+    private static float layoutScale(int screenWidth, int screenHeight) {
+        return Math.min(1.0F, Math.min(screenWidth / 900.0F, screenHeight / 464.0F));
+    }
+
+    private int evidenceBottom(int evidenceY) {
+        int rows = Math.max(1, Math.min(4, event.evidence().size()));
+        return evidenceY + 14 + rows * 12;
     }
 
     private static float lerp(float start, float end, float progress) {

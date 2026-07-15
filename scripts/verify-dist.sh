@@ -44,6 +44,8 @@ for version in "${versions[@]}"; do
 
   popup_api="$(javap -private -classpath "$jar" com.antirat.client.AntiRatThreatScreen)"
   grep -q 'animationProgress' <<<"$popup_api"
+  grep -q 'layoutScale' <<<"$popup_api"
+  grep -q 'evidenceBottom' <<<"$popup_api"
   grep -q 'wasRendered' <<<"$popup_api"
   if grep -qE 'NoticeScreen|AlertScreen' <<<"$popup_api"; then
     echo "AntiRat $version still packages the native fallback popup" >&2

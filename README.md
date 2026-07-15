@@ -20,7 +20,7 @@ AntiRat is a client-only Fabric security mod built to detect, interrupt, and con
 
 Installation is one step: place the correct AntiRat JAR in the profile's `mods` folder. AntiRat does not require Fabric API, a server plugin, a companion application, a whitelist, or custom launcher arguments.
 
-The animated threat-details panel is implemented against each supported Minecraft GUI API rather than replaced by a generic fallback screen. Its logo is decoded from the JAR and registered directly with Minecraft's texture manager, so the complete interface remains available without Fabric API.
+The animated threat-details panel is implemented against each supported Minecraft GUI API rather than replaced by a generic fallback screen. The whole composition scales responsively at automatic and high GUI scales, and its complete 256 x 256 logo is decoded from the JAR and registered directly with Minecraft's texture manager, so the full interface remains visible without Fabric API.
 
 ## Download
 
@@ -109,7 +109,7 @@ AntiRat consumes its commands locally before they can be sent to a server.
 
 ## Verification
 
-Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 40 guarded behaviors and then opened the complete animated threat-details panel on each version. A target passed only after a real post-resource-reload frame rendered with the bundled logo.
+Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 40 guarded behaviors and then opened the complete animated threat-details panel on each version. A target passed only after a real post-resource-reload frame reached the end of its entrance animation with the bundled logo ready and the evidence section still inside the panel bounds.
 
 | Verification | Result |
 | --- | ---: |

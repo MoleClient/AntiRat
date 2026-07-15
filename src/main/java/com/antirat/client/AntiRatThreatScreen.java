@@ -69,24 +69,30 @@ public final class AntiRatThreatScreen extends Screen {
             }
         }
 
-        int panelWidth = Math.min(768, width - 32);
-        int panelHeight = Math.min(432, height - 32);
+        float layoutScale = layoutScale(width, height);
+        int layoutWidth = Math.max(1, Math.round(width / layoutScale));
+        int layoutHeight = Math.max(1, Math.round(height / layoutScale));
+        context.getMatrices().pushMatrix();
+        context.getMatrices().scale(layoutScale, layoutScale);
+
+        int panelWidth = Math.min(768, layoutWidth - 32);
+        int panelHeight = Math.min(432, layoutHeight - 32);
         if (panelWidth < 320) {
-            panelWidth = width - 16;
+            panelWidth = layoutWidth - 16;
         }
         if (panelHeight < 260) {
-            panelHeight = height - 16;
+            panelHeight = layoutHeight - 16;
         }
 
-        int targetX = (width - panelWidth) / 2;
-        int targetY = (height - panelHeight) / 2;
-        int hiddenY = height + 24;
+        int targetX = (layoutWidth - panelWidth) / 2;
+        int targetY = (layoutHeight - panelHeight) / 2;
+        int hiddenY = layoutHeight + 24;
         int panelY = (int) lerp(hiddenY, targetY, easeOutCubic(progress));
 
         // Do not call Screen.renderBackground here. Minecraft and screen-wrapper mods may have
         // already applied the once-per-frame blur before this overlay is rendered, and a second
         // attempt throws "Can only blur once per frame". The dim layer is deliberately sufficient.
-        context.fill(RenderPipelines.GUI, 0, 0, width, height, ((int) (145 * progress) << 24));
+        context.fill(RenderPipelines.GUI, 0, 0, layoutWidth, layoutHeight, ((int) (145 * progress) << 24));
         context.fill(RenderPipelines.GUI, targetX, panelY, targetX + panelWidth, panelY + panelHeight, 0xF2171920);
         context.fill(RenderPipelines.GUI, targetX, panelY, targetX + 5, panelY + panelHeight,
                 event.blocked() ? 0xFFFF3354 : 0xFFFFB547);
@@ -133,9 +139,12 @@ public final class AntiRatThreatScreen extends Screen {
         drawSection(context, renderer, "Quick tip", event.tip(), contentX, detailY, textWidth);
         detailY += 48;
         drawEvidence(context, renderer, contentX, detailY, textWidth);
+        boolean frameComplete = progress >= 0.99F && logoReady
+                && evidenceBottom(detailY) <= panelY + panelHeight - 8;
 
+        context.getMatrices().popMatrix();
         super.render(context, mouseX, mouseY, deltaTicks);
-        if (logoReady) lastRenderedEventId = event.id();
+        if (frameComplete) lastRenderedEventId = event.id();
     }
 
     private int drawPair(DrawContext context, TextRenderer renderer, String label, String value, int x, int y, int width,
@@ -195,6 +204,15 @@ public final class AntiRatThreatScreen extends Screen {
     private static float easeOutCubic(float value) {
         float inverse = 1.0F - value;
         return 1.0F - inverse * inverse * inverse;
+    }
+
+    private static float layoutScale(int screenWidth, int screenHeight) {
+        return Math.min(1.0F, Math.min(screenWidth / 900.0F, screenHeight / 464.0F));
+    }
+
+    private int evidenceBottom(int evidenceY) {
+        int rows = Math.max(1, Math.min(4, event.evidence().size()));
+        return evidenceY + 14 + rows * 12;
     }
 
     private static float lerp(float start, float end, float progress) {
