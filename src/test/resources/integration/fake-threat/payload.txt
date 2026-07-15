@@ -1,0 +1,3 @@
+Synthetic non-executable test indicators:
+https://discord.com/api/webhooks/123456789/integration-test-placeholder
+java/net/http/HttpClient

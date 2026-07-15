@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "zzz_antirat_test_threat",
+  "version": "1.0.0",
+  "name": "AntiRat Synthetic Integration Threat",
+  "environment": "client"
+}

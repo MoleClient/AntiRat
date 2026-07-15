@@ -1,0 +1,236 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+def modernTargets = ['26.1', '26.1.2', '26.2'] as Set
+def targetMc = (findProperty('target_mc') ?: '26.2').toString()
+if (!modernTargets.contains(targetMc)) {
+    throw new GradleException("Modern build target must be one of ${modernTargets}; received ${targetMc}")
+}
+
+def repositoryRoot = file('../..').canonicalFile
+def canonicalJavaRoot = new File(repositoryRoot, 'src/main/java').canonicalFile
+def compatibilityJavaRoot = new File(repositoryRoot, 'src/compat/26/java').canonicalFile
+def compatibility261JavaRoot = new File(repositoryRoot, 'src/compat/26.1/java').canonicalFile
+def canonicalResources = new File(repositoryRoot, 'src/main/resources')
+def canonicalTests = new File(repositoryRoot, 'src/test/java')
+def canonicalTestResources = new File(repositoryRoot, 'src/test/resources')
+def runtimeFixtureSource = new File(repositoryRoot, 'src/runtimeFixture/java')
+def runtimeFixtureResources = new File(repositoryRoot, 'src/runtimeFixture/resources')
+def modernRunDir = file("run/${targetMc}")
+def variantClasses = [
+        'com/antirat/client/AntiRatClient.java',
+        'com/antirat/client/AntiRatThreatScreen.java',
+        'com/antirat/mixin/AuthlibJoinRequestMixin.java',
+        'com/antirat/mixin/LocalCommandMixin.java',
+        'com/antirat/mixin/MinecraftClientMixin.java',
+        'com/antirat/mixin/SessionMixin.java'
+] as Set
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = "antirat-${targetMc}"
+}
+
+sourceSets {
+    main {
+        java.srcDirs = targetMc == '26.2'
+                ? [canonicalJavaRoot, compatibilityJavaRoot]
+                : [canonicalJavaRoot, compatibilityJavaRoot, compatibility261JavaRoot]
+        java.exclude { element ->
+            File candidate = element.file.canonicalFile
+            if (candidate.toPath().startsWith(canonicalJavaRoot.toPath())) {
+                String relative = canonicalJavaRoot.toPath().relativize(candidate.toPath())
+                        .toString().replace(File.separatorChar, '/' as char)
+                return variantClasses.contains(relative)
+            }
+            if (targetMc != '26.2' && candidate.toPath().startsWith(compatibilityJavaRoot.toPath())) {
+                String relative = compatibilityJavaRoot.toPath().relativize(candidate.toPath())
+                        .toString().replace(File.separatorChar, '/' as char)
+                return relative == 'com/antirat/client/AntiRatClient.java'
+                        || relative == 'com/antirat/client/AntiRatThreatScreen.java'
+            }
+            return false
+        }
+        resources.srcDirs = [canonicalResources]
+    }
+    test {
+        java.srcDirs = [canonicalTests]
+        java.exclude 'com/antirat/bootstrap/AntiRatCommandsTest.java'
+        java.exclude 'com/antirat/client/AntiRatClientTest.java'
+        resources.srcDirs = [canonicalTestResources]
+    }
+    runtimeFixture {
+        java.srcDirs = [layout.buildDirectory.dir('generated/sources/runtimeFixture')]
+        resources.srcDirs = [runtimeFixtureResources]
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+loom {
+    mods {
+        "a-" {
+            sourceSet sourceSets.main
+        }
+    }
+    runs.configureEach {
+        runDir = modernRunDir.absolutePath
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${targetMc}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    testImplementation platform('org.junit:junit-bom:5.13.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+processResources {
+    inputs.properties version: project.version, minecraft_requirement: targetMc, java_requirement: '25'
+    filesMatching(['fabric.mod.json', 'antirat.mixins.json']) {
+        expand version: project.version,
+                minecraft_requirement: targetMc,
+                java_requirement: '25',
+                java_compatibility: 'JAVA_25'
+    }
+}
+
+tasks.named('processRuntimeFixtureResources') {
+    inputs.properties minecraft_requirement: targetMc, java_requirement: '25'
+    filesMatching('fabric.mod.json') {
+        expand minecraft_requirement: targetMc, java_requirement: '25'
+    }
+}
+
+def generateModernRuntimeFixture = tasks.register('generateModernRuntimeFixture', Copy) {
+    from(runtimeFixtureSource)
+    into(layout.buildDirectory.dir('generated/sources/runtimeFixture'))
+    filter { String line ->
+        line.replace('import net.minecraft.client.MinecraftClient;', 'import net.minecraft.client.Minecraft;')
+                .replace('MinecraftClient client = MinecraftClient.getInstance();',
+                        'Minecraft client = Minecraft.getInstance();')
+                .replace('.getSession()', '.getUser()')
+                .replace('client.scheduleStop();', 'client.stop();')
+    }
+}
+
+tasks.named('compileRuntimeFixtureJava') {
+    dependsOn generateModernRuntimeFixture
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+}
+
+java {
+    withSourcesJar()
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+test {
+    useJUnitPlatform()
+    dependsOn jar
+    systemProperty 'antirat.test.agentJar', tasks.jar.archiveFile.get().asFile.absolutePath
+    systemProperty 'antirat.benignCorpusDir', System.getProperty('antirat.benignCorpusDir', '')
+    systemProperty 'antirat.benignCorpusMinimum', System.getProperty('antirat.benignCorpusMinimum', '10')
+}
+
+jar {
+    from(new File(repositoryRoot, 'LICENSE')) {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+    manifest {
+        attributes(
+                'Implementation-Title': 'AntiRat',
+                'Implementation-Version': project.version,
+                'Automatic-Module-Name': 'com.antirat',
+                'Premain-Class': 'com.antirat.agent.AntiRatAgent',
+                'Agent-Class': 'com.antirat.agent.AntiRatAgent',
+                'Can-Redefine-Classes': 'false',
+                'Can-Retransform-Classes': 'true'
+        )
+    }
+}
+
+def runtimeFixtureJar = tasks.register('runtimeFixtureJar', Jar) {
+    dependsOn runtimeFixtureClasses
+    archiveBaseName = "antirat-runtime-fixture-${targetMc}"
+    archiveVersion = '1.0.0-dev'
+    destinationDirectory = layout.buildDirectory.dir('runtime-fixture')
+    from sourceSets.runtimeFixture.output
+}
+
+def prepareRuntimeFixture = tasks.register('prepareRuntimeFixture') {
+    dependsOn runtimeFixtureJar
+    doLast {
+        File fixture = runtimeFixtureJar.get().archiveFile.get().asFile
+        File modsDirectory = new File(modernRunDir, 'mods')
+        File target = new File(modsDirectory, 'antirat-runtime-fixture.jar')
+        modsDirectory.mkdirs()
+        copy {
+            from fixture
+            into modsDirectory
+            rename { target.name }
+        }
+        byte[] digest = java.security.MessageDigest.getInstance('SHA-256').digest(target.bytes)
+        String sha256 = digest.collect { String.format('%02x', it & 0xff) }.join()
+        File configDirectory = new File(modernRunDir, 'config')
+        File configFile = new File(configDirectory, 'antirat.properties')
+        configDirectory.mkdirs()
+        Properties properties = new Properties()
+        if (configFile.isFile()) configFile.withInputStream { properties.load(it) }
+        properties.setProperty('allow.sha256', sha256)
+        configFile.withOutputStream { properties.store(it, 'Generated only for the inert AntiRat live-runtime fixture') }
+        delete new File(modernRunDir, '.antirat/runtime-fixture.properties')
+    }
+}
+
+tasks.register('verifyRuntimeFixtureResult') {
+    doLast {
+        File marker = new File(modernRunDir, '.antirat/runtime-fixture.properties')
+        if (!marker.isFile()) throw new GradleException('Live runtime fixture did not produce its result marker')
+        Properties result = new Properties()
+        marker.withInputStream { result.load(it) }
+        List<String> required = [
+                'agentActive', 'callerAttributed', 'tokenGuardDenied', 'sessionTokenBlocked', 'sessionIdBlocked',
+                'webhookBlocked', 'credentialFileBlocked', 'credentialCopyBlocked', 'credentialFileUrlBlocked',
+                'reflectiveFileBlocked', 'reflectiveMetadataBlocked', 'reflectiveConstructorBlocked',
+                'scannerFileBlocked', 'methodHandleFileBlocked', 'reflectiveLookupFileBlocked',
+                'constructorHandleFileBlocked', 'constructorReferenceFileBlocked', 'methodReferenceFileBlocked',
+                'asynchronousFileBlocked', 'jdbcFileBlocked', 'processBlocked', 'pipelineBlocked',
+                'processEnvironmentBlocked', 'runtimePropertiesBlocked', 'nativeLoadBlocked', 'datagramBlocked',
+                'socketFactoryBlocked', 'dnsBlocked', 'dynamicCodeBlocked', 'reflectiveTokenBlocked',
+                'reflectiveMethodTokenBlocked', 'unsafeTokenBlocked', 'unsafeCopyContainedWithoutCrash',
+                'methodHandleTokenBlocked', 'authlibFieldBlocked', 'authlibJoinTokenBlocked',
+                'authlibJoinStringBlocked', 'antiRatTamperBlocked', 'reflectivePrimitiveTamperBlocked',
+                'runtimeJarQuarantined'
+        ]
+        List<String> failures = required.findAll { result.getProperty(it) != 'true' }
+        if (!failures.isEmpty()) throw new GradleException("Live runtime barriers failed: ${failures}")
+        if (new File(modernRunDir, 'mods/antirat-runtime-fixture.jar').exists()) {
+            throw new GradleException('Runtime fixture JAR was not moved out of mods')
+        }
+        logger.lifecycle("AntiRat ${targetMc} live runtime barriers passed (${required.size()} checks)")
+    }
+}
+
+tasks.named('runClient') {
+    dependsOn jar
+    doFirst {
+        jvmArgs "-javaagent:${tasks.jar.archiveFile.get().asFile.absolutePath}"
+        if (project.hasProperty('antiratRuntimeFixture')) jvmArgs '-Dantirat.runtime.fixture=true'
+    }
+}
+
+if (project.hasProperty('antiratRuntimeFixture')) {
+    tasks.named('runClient') { dependsOn prepareRuntimeFixture }
+}

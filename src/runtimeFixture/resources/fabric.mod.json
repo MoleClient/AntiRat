@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "zzz-antirat-runtime-fixture",
+  "version": "1.0.0",
+  "name": "AntiRat Inert Runtime Barrier Fixture",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.runtimefixture.RuntimeAttackFixture"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.2",
+    "minecraft": "${minecraft_requirement}",
+    "java": ">=${java_requirement}"
+  }
+}

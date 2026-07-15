@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "a-",
+  "version": "${version}",
+  "name": "AntiRat",
+  "description": "Client-side pre-initialization quarantine and credential-exfiltration defense for Fabric.",
+  "icon": "assets/antirat/textures/gui/icon.png",
+  "authors": ["AntiRat contributors"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "client",
+  "languageAdapters": {
+    "antirat_early": "com.antirat.bootstrap.AntiRatLanguageAdapter"
+  },
+  "entrypoints": {
+    "preLaunch": [
+      "com.antirat.bootstrap.AntiRatPreLaunch"
+    ],
+    "client": [
+      "com.antirat.client.AntiRatClient"
+    ]
+  },
+  "mixins": [
+    "antirat.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.2",
+    "minecraft": "${minecraft_requirement}",
+    "java": ">=${java_requirement}"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.antirat.mixin",
+  "compatibilityLevel": "${java_compatibility}",
+  "plugin": "com.antirat.bootstrap.AntiRatMixinPlugin",
+  "client": [
+    "AuthlibJoinRequestMixin",
+    "LocalCommandMixin",
+    "MinecraftClientMixin",
+    "SessionMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

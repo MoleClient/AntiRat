@@ -1,0 +1,223 @@
+import net.fabricmc.loom.task.RemapJarTask
+
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+}
+
+def legacyTargets = [
+        '1.21.11': [yarn: '1.21.11+build.6'],
+        '1.21.8' : [yarn: '1.21.8+build.1'],
+        '1.21.4' : [yarn: '1.21.4+build.8'],
+        '1.21.1' : [yarn: '1.21.1+build.3']
+]
+def targetMc = (findProperty('target_mc') ?: minecraft_version).toString()
+if (!legacyTargets.containsKey(targetMc)) {
+    throw new GradleException("Legacy build target must be one of ${legacyTargets.keySet()}; received ${targetMc}")
+}
+def targetYarn = legacyTargets[targetMc].yarn
+def sourceVariant = targetMc == '1.21.1' ? '1.21.4' : targetMc
+def legacyRunDir = file("run/${targetMc}")
+def canonicalJavaRoot = file('src/main/java').canonicalFile
+def variantClasses = [
+        'com/antirat/client/AntiRatClient.java',
+        'com/antirat/client/AntiRatThreatScreen.java'
+] as Set
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = "${project.archives_base_name}-${targetMc}"
+}
+
+sourceSets {
+    main {
+        if (targetMc != '1.21.11') {
+            java.srcDir "src/compat/${sourceVariant}/java"
+            java.exclude { element ->
+                File candidate = element.file.canonicalFile
+                if (!candidate.toPath().startsWith(canonicalJavaRoot.toPath())) return false
+                String relative = canonicalJavaRoot.toPath().relativize(candidate.toPath())
+                        .toString().replace(File.separatorChar, '/' as char)
+                return variantClasses.contains(relative)
+            }
+        }
+    }
+    test {
+        if (targetMc == '1.21.4' || targetMc == '1.21.1') {
+            java.exclude 'com/antirat/client/AntiRatClientTest.java'
+        }
+    }
+    runtimeFixture {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+loom {
+    mods {
+        "a-" {
+            sourceSet sourceSets.main
+        }
+    }
+    runs.configureEach {
+        runDir = legacyRunDir.absolutePath
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${targetMc}"
+    mappings "net.fabricmc:yarn:${targetYarn}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    testImplementation platform('org.junit:junit-bom:5.13.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+processResources {
+    inputs.properties version: project.version, minecraft_requirement: targetMc, java_requirement: '21'
+    filesMatching(['fabric.mod.json', 'antirat.mixins.json']) {
+        expand version: project.version,
+                minecraft_requirement: targetMc,
+                java_requirement: '21',
+                java_compatibility: 'JAVA_21'
+    }
+}
+
+tasks.named('processRuntimeFixtureResources') {
+    inputs.properties minecraft_requirement: targetMc, java_requirement: '21'
+    filesMatching('fabric.mod.json') {
+        expand minecraft_requirement: targetMc, java_requirement: '21'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+}
+
+java {
+    withSourcesJar()
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+test {
+    useJUnitPlatform()
+    dependsOn jar
+    systemProperty 'antirat.test.agentJar', tasks.jar.archiveFile.get().asFile.absolutePath
+    systemProperty 'antirat.benignCorpusDir', System.getProperty('antirat.benignCorpusDir', '')
+    systemProperty 'antirat.benignCorpusMinimum', System.getProperty('antirat.benignCorpusMinimum', '10')
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+    manifest {
+        attributes(
+                'Implementation-Title': 'AntiRat',
+                'Implementation-Version': project.version,
+                'Automatic-Module-Name': 'com.antirat',
+                'Premain-Class': 'com.antirat.agent.AntiRatAgent',
+                'Agent-Class': 'com.antirat.agent.AntiRatAgent',
+                'Can-Redefine-Classes': 'false',
+                'Can-Retransform-Classes': 'true'
+        )
+    }
+}
+
+def runtimeFixtureJar = tasks.register('runtimeFixtureJar', Jar) {
+    dependsOn runtimeFixtureClasses
+    archiveBaseName = "antirat-runtime-fixture-${targetMc}"
+    archiveVersion = '1.0.0-dev-named'
+    destinationDirectory = layout.buildDirectory.dir('runtime-fixture/named')
+    from sourceSets.runtimeFixture.output
+}
+
+def remapRuntimeFixtureJar = tasks.register('remapRuntimeFixtureJar', RemapJarTask) {
+    dependsOn runtimeFixtureJar
+    inputFile = runtimeFixtureJar.flatMap { it.archiveFile }
+    archiveBaseName = "antirat-runtime-fixture-${targetMc}"
+    archiveVersion = '1.0.0-dev'
+    destinationDirectory = layout.buildDirectory.dir('runtime-fixture/remapped')
+    addNestedDependencies = false
+}
+
+def prepareRuntimeFixture = tasks.register('prepareRuntimeFixture') {
+    dependsOn remapRuntimeFixtureJar
+    doLast {
+        File fixture = remapRuntimeFixtureJar.get().archiveFile.get().asFile
+        File modsDirectory = new File(legacyRunDir, 'mods')
+        File target = new File(modsDirectory, 'antirat-runtime-fixture.jar')
+        modsDirectory.mkdirs()
+        project.copy {
+            from fixture
+            into modsDirectory
+            rename { target.name }
+        }
+
+        byte[] digest = java.security.MessageDigest.getInstance('SHA-256').digest(target.bytes)
+        String sha256 = digest.collect { String.format('%02x', it & 0xff) }.join()
+        File configDirectory = new File(legacyRunDir, 'config')
+        File configFile = new File(configDirectory, 'antirat.properties')
+        configDirectory.mkdirs()
+        Properties properties = new Properties()
+        if (configFile.isFile()) configFile.withInputStream { properties.load(it) }
+        properties.setProperty('allow.sha256', sha256)
+        configFile.withOutputStream { properties.store(it,
+                'Generated only for the inert AntiRat live-runtime fixture') }
+
+        delete new File(legacyRunDir, '.antirat/runtime-fixture.properties')
+    }
+}
+
+tasks.register('verifyRuntimeFixtureResult') {
+    doLast {
+        File marker = new File(legacyRunDir, '.antirat/runtime-fixture.properties')
+        if (!marker.isFile()) throw new GradleException('Live runtime fixture did not produce its result marker')
+        Properties result = new Properties()
+        marker.withInputStream { result.load(it) }
+        List<String> required = [
+                'agentActive', 'callerAttributed', 'tokenGuardDenied', 'sessionTokenBlocked', 'sessionIdBlocked',
+                'webhookBlocked', 'credentialFileBlocked', 'credentialCopyBlocked',
+                'credentialFileUrlBlocked',
+                'reflectiveFileBlocked', 'reflectiveMetadataBlocked', 'reflectiveConstructorBlocked',
+                'scannerFileBlocked', 'methodHandleFileBlocked', 'reflectiveLookupFileBlocked',
+                'constructorHandleFileBlocked', 'constructorReferenceFileBlocked',
+                'methodReferenceFileBlocked', 'asynchronousFileBlocked', 'jdbcFileBlocked',
+                'processBlocked', 'pipelineBlocked', 'processEnvironmentBlocked',
+                'runtimePropertiesBlocked', 'nativeLoadBlocked',
+                'datagramBlocked', 'socketFactoryBlocked', 'dnsBlocked', 'dynamicCodeBlocked',
+                'reflectiveTokenBlocked', 'reflectiveMethodTokenBlocked', 'unsafeTokenBlocked',
+                'unsafeCopyContainedWithoutCrash',
+                'methodHandleTokenBlocked', 'authlibFieldBlocked', 'authlibJoinTokenBlocked',
+                'authlibJoinStringBlocked',
+                'antiRatTamperBlocked', 'reflectivePrimitiveTamperBlocked', 'runtimeJarQuarantined'
+        ]
+        List<String> failures = required.findAll { result.getProperty(it) != 'true' }
+        if (!failures.isEmpty()) throw new GradleException("Live runtime barriers failed: ${failures}")
+        File installed = new File(legacyRunDir, 'mods/antirat-runtime-fixture.jar')
+        if (installed.exists()) throw new GradleException('Runtime fixture JAR was not moved out of mods')
+        logger.lifecycle("AntiRat live runtime barriers passed (${required.size()} checks)")
+    }
+}
+
+tasks.named('runClient') {
+    dependsOn jar
+    doFirst {
+        jvmArgs "-javaagent:${tasks.jar.archiveFile.get().asFile.absolutePath}"
+        if (project.hasProperty('antiratRuntimeFixture')) {
+            jvmArgs '-Dantirat.runtime.fixture=true'
+        }
+    }
+}
+
+if (project.hasProperty('antiratRuntimeFixture')) {
+    tasks.named('runClient') {
+        dependsOn prepareRuntimeFixture
+    }
+}

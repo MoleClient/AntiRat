@@ -1,0 +1,15 @@
+.gradle/
+build/
+run/
+dist/
+logs/
+.antirat/
+*.log
+*.disabled
+*.disabled.properties
+hs_err_pid*
+replay_pid*
+.DS_Store
+.idea/
+.vscode/
+*.iml

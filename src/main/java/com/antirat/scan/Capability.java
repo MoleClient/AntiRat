@@ -1,0 +1,11 @@
+package com.antirat.scan;
+
+public enum Capability {
+    MINECRAFT_SESSION,
+    DISCORD_CREDENTIALS,
+    BROWSER_CREDENTIALS,
+    WEBHOOK_EXFILTRATION,
+    UNTRUSTED_NETWORK,
+    PROCESS_EXECUTION,
+    DYNAMIC_CODE
+}
