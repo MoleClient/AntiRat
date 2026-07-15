@@ -20,6 +20,8 @@ AntiRat is a client-only Fabric security mod built to detect, interrupt, and con
 
 Installation is one step: place the correct AntiRat JAR in the profile's `mods` folder. AntiRat does not require Fabric API, a server plugin, a companion application, a whitelist, or custom launcher arguments.
 
+The animated threat-details panel is implemented against each supported Minecraft GUI API rather than replaced by a generic fallback screen. Its logo is decoded from the JAR and registered directly with Minecraft's texture manager, so the complete interface remains available without Fabric API.
+
 ## Download
 
 | Minecraft | Java | Release asset |
@@ -107,12 +109,14 @@ AntiRat consumes its commands locally before they can be sent to a server.
 
 ## Verification
 
-Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 40 guarded behaviors on each version.
+Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 40 guarded behaviors and then opened the complete animated threat-details panel on each version. A target passed only after a real post-resource-reload frame rendered with the bundled logo.
 
 | Verification | Result |
 | --- | ---: |
 | Supported Minecraft versions launched | 7 / 7 |
 | Live runtime barrier checks | 280 / 280 |
+| Animated popup render checks | 7 / 7 |
+| Total live assertions | 287 / 287 |
 | Release checksum and metadata audits | 7 / 7 |
 
 The fixture exercises session and Authlib access, credential files, file-copy and file-URL paths, reflection, constructors, scanners, MethodHandles, method references, asynchronous channels, JDBC, processes, pipelines, environment access, native loading, sockets, DNS, dynamic code, Unsafe, tampering, attribution, non-crashing memory containment, and runtime quarantine.

@@ -18,6 +18,8 @@ public final class AntiRatThreatScreen extends Screen {
     private static final Identifier LOGO = Identifier.of("antirat", "textures/gui/icon.png");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
             .withZone(ZoneId.systemDefault());
+    private static volatile String lastRenderedEventId = "";
+    private static volatile boolean logoRegistered;
 
     private final ThreatEvent event;
     private final Screen parent;
@@ -57,6 +59,7 @@ public final class AntiRatThreatScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float deltaTicks) {
+        boolean logoReady = ensureLogoRegistered();
         float progress = animationProgress();
         if (closing) {
             progress = 1.0F - progress;
@@ -101,8 +104,10 @@ public final class AntiRatThreatScreen extends Screen {
         // look cropped inside the small placeholder badge even though the full texture was used.
         int logoInset = Math.max(6, badgeSize / 8);
         int renderedLogoSize = badgeSize - logoInset * 2;
-        context.drawTexture(RenderPipelines.GUI_TEXTURED, LOGO, contentX + logoInset, contentY + logoInset,
-                0.0F, 0.0F, renderedLogoSize, renderedLogoSize, 256, 256, 256, 256);
+        if (logoReady) {
+            context.drawTexture(RenderPipelines.GUI_TEXTURED, LOGO, contentX + logoInset, contentY + logoInset,
+                    0.0F, 0.0F, renderedLogoSize, renderedLogoSize, 256, 256, 256, 256);
+        }
 
         TextRenderer renderer = textRenderer;
         int titleX = contentX + badgeSize + 22;
@@ -130,6 +135,7 @@ public final class AntiRatThreatScreen extends Screen {
         drawEvidence(context, renderer, contentX, detailY, textWidth);
 
         super.render(context, mouseX, mouseY, deltaTicks);
+        if (logoReady) lastRenderedEventId = event.id();
     }
 
     private int drawPair(DrawContext context, TextRenderer renderer, String label, String value, int x, int y, int width,
@@ -217,6 +223,28 @@ public final class AntiRatThreatScreen extends Screen {
 
     private static String emptyDash(String value) {
         return value == null || value.isBlank() ? "-" : value;
+    }
+
+    private boolean ensureLogoRegistered() {
+        if (logoRegistered) return true;
+        if (client == null) return false;
+        try (var input = AntiRatThreatScreen.class.getResourceAsStream(
+                "/assets/antirat/textures/gui/icon.png")) {
+            if (input == null) return false;
+            var image = net.minecraft.client.texture.NativeImage.read(input);
+            var texture = new net.minecraft.client.texture.NativeImageBackedTexture(
+                    () -> "AntiRat logo", image);
+            client.getTextureManager().registerTexture(LOGO, texture);
+            texture.upload();
+            logoRegistered = true;
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    public static boolean wasRendered(String eventId) {
+        return eventId != null && eventId.equals(lastRenderedEventId);
     }
 
     @Override

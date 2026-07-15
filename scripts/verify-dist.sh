@@ -42,5 +42,13 @@ for version in "${versions[@]}"; do
   javap -verbose -classpath "$jar" com.antirat.AntiRatRuntime \
     | grep -q "major version: ${class_major}"
 
-  echo "Verified AntiRat $version metadata, agent, icon, and Java $java_version bytecode"
+  popup_api="$(javap -private -classpath "$jar" com.antirat.client.AntiRatThreatScreen)"
+  grep -q 'animationProgress' <<<"$popup_api"
+  grep -q 'wasRendered' <<<"$popup_api"
+  if grep -qE 'NoticeScreen|AlertScreen' <<<"$popup_api"; then
+    echo "AntiRat $version still packages the native fallback popup" >&2
+    exit 1
+  fi
+
+  echo "Verified AntiRat $version metadata, agent, animated popup, icon, and Java $java_version bytecode"
 done

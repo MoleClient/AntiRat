@@ -5,7 +5,7 @@ import com.antirat.model.ThreatEvent;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.render.RenderLayer;
+import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
@@ -14,7 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-/** Full animated popup for Minecraft 1.21.1 and 1.21.4's MatrixStack rendering API. */
+/** Full animated popup for Minecraft 1.21.1's legacy DrawContext texture API. */
 public final class AntiRatThreatScreen extends Screen {
     private static final Identifier LOGO = Identifier.of("antirat", "textures/gui/icon.png");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -74,12 +74,10 @@ public final class AntiRatThreatScreen extends Screen {
         int panelHeight = Math.min(432, height - 32);
         if (panelWidth < 320) panelWidth = width - 16;
         if (panelHeight < 260) panelHeight = height - 16;
-
         int targetX = (width - panelWidth) / 2;
         int targetY = (height - panelHeight) / 2;
         int panelY = (int) lerp(height + 24, targetY, easeOutCubic(progress));
 
-        // A dim layer avoids the once-per-frame blur crash caused by rendering a second background.
         context.fill(0, 0, width, height, ((int) (145 * progress) << 24));
         context.fill(targetX, panelY, targetX + panelWidth, panelY + panelHeight, 0xF2171920);
         context.fill(targetX, panelY, targetX + 5, panelY + panelHeight,
@@ -92,20 +90,20 @@ public final class AntiRatThreatScreen extends Screen {
         int contentX = targetX + pad;
         int contentY = panelY + pad;
         int badgeSize = Math.max(42, Math.min(72, panelWidth / 10));
-        int badgeColor = event.blocked() ? 0xFFFF3354 : 0xFFFFB547;
-        context.fill(contentX, contentY, contentX + badgeSize, contentY + badgeSize, badgeColor);
+        context.fill(contentX, contentY, contentX + badgeSize, contentY + badgeSize,
+                event.blocked() ? 0xFFFF3354 : 0xFFFFB547);
         int logoInset = Math.max(6, badgeSize / 8);
         int renderedLogoSize = badgeSize - logoInset * 2;
         if (logoReady) {
-            context.drawTexture(RenderLayer::getGuiTextured, LOGO, contentX + logoInset, contentY + logoInset,
-                    0.0F, 0.0F, renderedLogoSize, renderedLogoSize, 256, 256);
+            context.drawTexture(LOGO, contentX + logoInset, contentY + logoInset, 0.0F, 0.0F,
+                    renderedLogoSize, renderedLogoSize, 256, 256);
         }
 
         TextRenderer renderer = textRenderer;
         int titleX = contentX + badgeSize + 22;
-        drawText(context, renderer, "AntiRat", titleX, contentY + 5, 0xFFE2E4E8, 1.0F);
-        drawText(context, renderer, event.blocked() ? "Threat prevented" : "Threat flagged",
-                titleX, contentY + 23, riskColor(event.riskLevel()), 1.0F);
+        context.drawText(renderer, "AntiRat", titleX, contentY + 5, 0xFFE2E4E8, false);
+        context.drawText(renderer, event.blocked() ? "Threat prevented" : "Threat flagged",
+                titleX, contentY + 23, riskColor(event.riskLevel()), false);
 
         int topLineY = contentY + Math.max(78, badgeSize + 18);
         int labelColor = 0xFF9EA3AD;
@@ -131,7 +129,6 @@ public final class AntiRatThreatScreen extends Screen {
         drawSection(context, renderer, "Quick tip", event.tip(), contentX, detailY, textWidth);
         detailY += 48;
         drawEvidence(context, renderer, contentX, detailY, textWidth);
-
         super.render(context, mouseX, mouseY, deltaTicks);
         if (logoReady) lastRenderedEventId = event.id();
     }
@@ -148,7 +145,10 @@ public final class AntiRatThreatScreen extends Screen {
     private void drawSection(DrawContext context, TextRenderer renderer, String heading, String body,
                              int x, int y, int width) {
         context.drawText(renderer, heading, x, y, 0xFFE9EAEE, false);
-        context.drawWrappedText(renderer, Text.literal(emptyDash(body)), x, y + 14, width, 0xFFC6CAD3, false);
+        List<OrderedText> lines = renderer.wrapLines(Text.literal(emptyDash(body)), width);
+        for (int index = 0; index < Math.min(2, lines.size()); index++) {
+            context.drawText(renderer, lines.get(index), x, y + 14 + index * 10, 0xFFC6CAD3, false);
+        }
     }
 
     private void drawEvidence(DrawContext context, TextRenderer renderer, int x, int y, int width) {
@@ -163,19 +163,6 @@ public final class AntiRatThreatScreen extends Screen {
             drawClippedText(context, renderer, "- " + evidence.get(index), x, rowY, width, 0xFFC6CAD3);
             rowY += 12;
         }
-    }
-
-    private void drawText(DrawContext context, TextRenderer renderer, String text,
-                          int x, int y, int color, float scale) {
-        if (scale == 1.0F) {
-            context.drawText(renderer, text, x, y, color, false);
-            return;
-        }
-        context.getMatrices().push();
-        context.getMatrices().translate(x, y, 0.0F);
-        context.getMatrices().scale(scale, scale, 1.0F);
-        context.drawText(renderer, text, 0, 0, color, false);
-        context.getMatrices().pop();
     }
 
     private void drawClippedText(DrawContext context, TextRenderer renderer, String text,

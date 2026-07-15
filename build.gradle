@@ -15,9 +15,9 @@ if (!legacyTargets.containsKey(targetMc)) {
     throw new GradleException("Legacy build target must be one of ${legacyTargets.keySet()}; received ${targetMc}")
 }
 def targetYarn = legacyTargets[targetMc].yarn
-def sourceVariant = targetMc == '1.21.1' ? '1.21.4' : targetMc
 def legacyRunDir = file("run/${targetMc}")
 def canonicalJavaRoot = file('src/main/java').canonicalFile
+def compatibility1214JavaRoot = file('src/compat/1.21.4/java').canonicalFile
 def variantClasses = [
         'com/antirat/client/AntiRatClient.java',
         'com/antirat/client/AntiRatThreatScreen.java'
@@ -33,9 +33,20 @@ base {
 sourceSets {
     main {
         if (targetMc != '1.21.11') {
-            java.srcDir "src/compat/${sourceVariant}/java"
+            if (targetMc == '1.21.1') {
+                java.srcDir 'src/compat/1.21.4/java'
+                java.srcDir 'src/compat/1.21.1/java'
+            } else {
+                java.srcDir "src/compat/${targetMc}/java"
+            }
             java.exclude { element ->
                 File candidate = element.file.canonicalFile
+                if (targetMc == '1.21.1'
+                        && candidate.toPath().startsWith(compatibility1214JavaRoot.toPath())) {
+                    String relative = compatibility1214JavaRoot.toPath().relativize(candidate.toPath())
+                            .toString().replace(File.separatorChar, '/' as char)
+                    if (relative == 'com/antirat/client/AntiRatThreatScreen.java') return true
+                }
                 if (!candidate.toPath().startsWith(canonicalJavaRoot.toPath())) return false
                 String relative = canonicalJavaRoot.toPath().relativize(candidate.toPath())
                         .toString().replace(File.separatorChar, '/' as char)
@@ -196,7 +207,8 @@ tasks.register('verifyRuntimeFixtureResult') {
                 'unsafeCopyContainedWithoutCrash',
                 'methodHandleTokenBlocked', 'authlibFieldBlocked', 'authlibJoinTokenBlocked',
                 'authlibJoinStringBlocked',
-                'antiRatTamperBlocked', 'reflectivePrimitiveTamperBlocked', 'runtimeJarQuarantined'
+                'antiRatTamperBlocked', 'reflectivePrimitiveTamperBlocked', 'runtimeJarQuarantined',
+                'popupRendered'
         ]
         List<String> failures = required.findAll { result.getProperty(it) != 'true' }
         if (!failures.isEmpty()) throw new GradleException("Live runtime barriers failed: ${failures}")

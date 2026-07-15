@@ -212,7 +212,7 @@ tasks.register('verifyRuntimeFixtureResult') {
                 'reflectiveMethodTokenBlocked', 'unsafeTokenBlocked', 'unsafeCopyContainedWithoutCrash',
                 'methodHandleTokenBlocked', 'authlibFieldBlocked', 'authlibJoinTokenBlocked',
                 'authlibJoinStringBlocked', 'antiRatTamperBlocked', 'reflectivePrimitiveTamperBlocked',
-                'runtimeJarQuarantined'
+                'runtimeJarQuarantined', 'popupRendered'
         ]
         List<String> failures = required.findAll { result.getProperty(it) != 'true' }
         if (!failures.isEmpty()) throw new GradleException("Live runtime barriers failed: ${failures}")

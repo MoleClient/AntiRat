@@ -6,6 +6,11 @@ import net.minecraft.client.MinecraftClient;
 import com.antirat.guard.TokenGuard;
 import com.antirat.scan.ModIndex;
 import com.antirat.AntiRatRuntime;
+import com.antirat.client.AntiRatClient;
+import com.antirat.client.AntiRatThreatScreen;
+import com.antirat.model.RiskLevel;
+import com.antirat.model.ThreatEvent;
+import com.antirat.model.ThreatType;
 
 import javax.net.SocketFactory;
 import java.io.ByteArrayOutputStream;
@@ -411,16 +416,55 @@ public final class RuntimeAttackFixture implements ClientModInitializer {
         }
         result.setProperty("runtimeJarQuarantined", Boolean.toString(!Files.exists(installedFixture)));
 
-        Path marker = FabricLoader.getInstance().getGameDir().resolve(".antirat").resolve("runtime-fixture.properties");
-        try {
-            Files.createDirectories(marker.getParent());
-            try (var output = Files.newOutputStream(marker)) {
-                result.store(output, "Inert AntiRat runtime verification; contains no credentials");
+        ThreatEvent popupPreview = ThreatEvent.create(ThreatType.PROTECTION_STATUS, RiskLevel.INFO,
+                "AntiRat placeholder", "Live compatibility test for the animated AntiRat details panel.",
+                AntiRatRuntime.MOD_ID, "AntiRat", "", "UI compatibility fixture", false, 100,
+                "The test client will close automatically.",
+                java.util.List.of("Version-specific renderer loaded", "No security decision was made"));
+        AntiRatRuntime.report(popupPreview);
+
+        Thread popupVerifier = new Thread(() -> {
+            boolean popupRendered = false;
+            try {
+                // Wait until the ordinary title screen/resource reload path has settled. This
+                // verifies the popup as a real in-game UI, not merely an early splash frame.
+                Thread.sleep(8_000L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
             }
-        } catch (Exception exception) {
-            throw new IllegalStateException("Could not write AntiRat runtime fixture result", exception);
-        }
-        client.scheduleStop();
+            for (int openAttempt = 0; openAttempt < 40 && !popupRendered; openAttempt++) {
+                // Early startup screens can replace a screen while resources are still loading.
+                // Re-request the harmless popup until a real rendered frame confirms readiness.
+                AntiRatClient.openEvent(popupPreview.id());
+                for (int frameAttempt = 0; frameAttempt < 20; frameAttempt++) {
+                    if (AntiRatThreatScreen.wasRendered(popupPreview.id())) {
+                        popupRendered = true;
+                        break;
+                    }
+                    try {
+                        Thread.sleep(25L);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        openAttempt = 40;
+                        break;
+                    }
+                }
+            }
+            result.setProperty("popupRendered", Boolean.toString(popupRendered));
+            Path marker = FabricLoader.getInstance().getGameDir().resolve(".antirat")
+                    .resolve("runtime-fixture.properties");
+            try {
+                Files.createDirectories(marker.getParent());
+                try (var output = Files.newOutputStream(marker)) {
+                    result.store(output, "Inert AntiRat runtime verification; contains no credentials");
+                }
+            } catch (Exception exception) {
+                throw new IllegalStateException("Could not write AntiRat runtime fixture result", exception);
+            }
+            client.scheduleStop();
+        }, "AntiRat popup compatibility verifier");
+        popupVerifier.setDaemon(true);
+        popupVerifier.start();
     }
 
     @FunctionalInterface
