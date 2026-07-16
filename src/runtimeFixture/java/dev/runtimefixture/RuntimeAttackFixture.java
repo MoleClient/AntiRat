@@ -421,7 +421,7 @@ public final class RuntimeAttackFixture implements ClientModInitializer {
                 AntiRatRuntime.MOD_ID, "AntiRat", "", "UI compatibility fixture", false, 100,
                 "The test client will close automatically.",
                 java.util.List.of("Version-specific renderer loaded", "No security decision was made"));
-        AntiRatRuntime.report(popupPreview);
+        AntiRatClient.openPreview(popupPreview);
 
         Thread popupVerifier = new Thread(() -> {
             boolean popupRendered = false;
@@ -435,7 +435,7 @@ public final class RuntimeAttackFixture implements ClientModInitializer {
             for (int openAttempt = 0; openAttempt < 40 && !popupRendered; openAttempt++) {
                 // Early startup screens can replace a screen while resources are still loading.
                 // Re-request the harmless popup until a real rendered frame confirms readiness.
-                AntiRatClient.openEvent(popupPreview.id());
+                AntiRatClient.openPreview(popupPreview);
                 for (int frameAttempt = 0; frameAttempt < 20; frameAttempt++) {
                     if (AntiRatThreatScreen.wasRendered(popupPreview.id())) {
                         popupRendered = true;

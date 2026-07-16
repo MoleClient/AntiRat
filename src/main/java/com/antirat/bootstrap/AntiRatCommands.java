@@ -147,8 +147,7 @@ public final class AntiRatCommands {
                 AntiRatRuntime.MOD_ID, "AntiRat", "", "UI preview", false, 100,
                 "Press Escape to close this placeholder.",
                 List.of("Local /antirat placeholder command", "No security decision was made"));
-        AntiRatRuntime.report(preview);
-        AntiRatClient.openEvent(preview.id());
+        AntiRatClient.openPreview(preview);
     }
 
     private static void scan(String modId) {

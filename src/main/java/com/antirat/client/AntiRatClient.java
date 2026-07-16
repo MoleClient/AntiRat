@@ -71,6 +71,13 @@ public final class AntiRatClient implements ClientModInitializer {
             return;
         }
 
+        openPreview(event);
+    }
+
+    /** Opens a transient UI preview without publishing it as a security event. */
+    public static void openPreview(ThreatEvent event) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || event == null) return;
         client.execute(() -> client.setScreen(new AntiRatThreatScreen(event, client.currentScreen)));
     }
 

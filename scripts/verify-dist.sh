@@ -52,5 +52,19 @@ for version in "${versions[@]}"; do
     exit 1
   fi
 
-  echo "Verified AntiRat $version metadata, agent, animated popup, icon, and Java $java_version bytecode"
+  client_api="$(javap -private -classpath "$jar" com.antirat.client.AntiRatClient)"
+  grep -q 'openPreview' <<<"$client_api"
+  commands_code="$(javap -c -p -classpath "$jar" com.antirat.bootstrap.AntiRatCommands)"
+  placeholder_code="$(awk '
+    /private static void placeholder\(\);/ { capture = 1 }
+    capture { print }
+    capture && /private static void scan\(java.lang.String\);/ { exit }
+  ' <<<"$commands_code")"
+  grep -q 'AntiRatClient.openPreview' <<<"$placeholder_code"
+  if grep -q 'AntiRatRuntime.report' <<<"$placeholder_code"; then
+    echo "AntiRat $version still publishes the placeholder as a security event" >&2
+    exit 1
+  fi
+
+  echo "Verified AntiRat $version metadata, agent, silent preview, animated popup, icon, and Java $java_version bytecode"
 done

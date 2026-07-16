@@ -57,12 +57,18 @@ public final class AntiRatClient implements ClientModInitializer {
     }
 
     public static void openEvent(String eventId) {
-        MinecraftClient client = MinecraftClient.getInstance();
         ThreatEvent event = AntiRatRuntime.eventById(eventId);
         if (event == null) {
             postSystemMessage("Event not found: " + eventId, UiColor.RED);
             return;
         }
+        openPreview(event);
+    }
+
+    /** Opens a transient UI preview without publishing it as a security event. */
+    public static void openPreview(ThreatEvent event) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || event == null) return;
         client.execute(() -> client.setScreen(new AntiRatThreatScreen(event, client.currentScreen)));
     }
 

@@ -105,7 +105,7 @@ AntiRat consumes its commands locally before they can be sent to a server.
 /antirat unquarantine <mod-id> [confirm]
 ```
 
-`scan` is read-only. Manual quarantine never restarts Minecraft. Unquarantine verifies the stored hash, refuses to overwrite an active version, and requires `confirm` when restoring a high-confidence detection.
+`placeholder` opens a transient preview directly and does not publish a fake security event or chat notification. `scan` is read-only. Manual quarantine never restarts Minecraft. Unquarantine verifies the stored hash, refuses to overwrite an active version, and requires `confirm` when restoring a high-confidence detection.
 
 ## Verification
 
