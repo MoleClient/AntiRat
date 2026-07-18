@@ -96,7 +96,8 @@ public final class StartupCoordinator {
                         : StartupReport.Entry.fromScan(result, ScanStatus.QUARANTINE_FAILED, null,
                         "Fabric entrypoint suppression was unavailable; the source was left in place under runtime lockdown");
                 status = entry.status();
-                quarantinedAny |= status == ScanStatus.QUARANTINED;
+                quarantinedAny |= status == ScanStatus.QUARANTINED
+                        || status == ScanStatus.QUARANTINE_PENDING;
                 quarantineFailed |= status == ScanStatus.QUARANTINE_FAILED;
                 pending.add(entry);
             } else if (loaderSuppressed && dependentQuarantines.containsKey(result.source())) {
@@ -104,7 +105,8 @@ public final class StartupCoordinator {
                 entry = QuarantineManager.quarantine(gameDir, result, ScanStatus.DEPENDENCY_QUARANTINED,
                         "Disabled for the clean relaunch because it requires quarantined mod " + dependency);
                 status = entry.status();
-                quarantinedAny |= status == ScanStatus.DEPENDENCY_QUARANTINED;
+                quarantinedAny |= status == ScanStatus.DEPENDENCY_QUARANTINED
+                        || status == ScanStatus.QUARANTINE_PENDING;
                 quarantineFailed |= status == ScanStatus.QUARANTINE_FAILED;
                 pending.add(entry);
             } else if (config.isHashAllowed(result.sha256())) {

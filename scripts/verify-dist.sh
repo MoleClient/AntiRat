@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$ROOT/dist"
-MOD_VERSION="2.0.0"
+MOD_VERSION="2.0.1"
 
 (
   cd "$DIST"
@@ -25,7 +25,7 @@ for version in "${versions[@]}"; do
 
   unzip -p "$jar" fabric.mod.json \
     | jq -e --arg minecraft "${version}" --arg java ">=${java_version}" \
-      '.version == "2.0.0" and .environment == "client" and
+      '.version == "2.0.1" and .environment == "client" and
        .depends.fabricloader == ">=0.19.2" and
        .depends.minecraft == $minecraft and .depends.java == $java' >/dev/null
 
@@ -39,8 +39,14 @@ for version in "${versions[@]}"; do
   grep -q '^Can-Retransform-Classes: true' <<<"$manifest"
 
   jar tf "$jar" | grep -q '^assets/antirat/textures/gui/icon.png$'
+  jar tf "$jar" | grep -q '^com/antirat/bootstrap/DeferredQuarantineHelper.class$'
   javap -verbose -classpath "$jar" com.antirat.AntiRatRuntime \
     | grep -q "major version: ${class_major}"
+
+  transformer_api="$(javap -private -classpath "$jar" com.antirat.agent.ModCallSiteTransformer)"
+  grep -q 'transformCredentialCarrierBytes' <<<"$transformer_api"
+  runtime_hooks_api="$(javap -private -classpath "$jar" com.antirat.guard.RuntimeHooks)"
+  grep -q 'spoofCredentialMixinArgument' <<<"$runtime_hooks_api"
 
   popup_api="$(javap -private -classpath "$jar" com.antirat.client.AntiRatThreatScreen)"
   grep -q 'animationProgress' <<<"$popup_api"
@@ -66,5 +72,5 @@ for version in "${versions[@]}"; do
     exit 1
   fi
 
-  echo "Verified AntiRat $version metadata, agent, silent preview, animated popup, icon, and Java $java_version bytecode"
+  echo "Verified AntiRat $version metadata, agent, credential-carrier guard, deferred quarantine, silent preview, animated popup, icon, and Java $java_version bytecode"
 done

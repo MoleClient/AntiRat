@@ -84,6 +84,7 @@ public final class AntiRatRuntime {
     public static void report(ThreatEvent event) {
         EVENTS_BY_ID.put(event.id(), event);
         CLIENT_EVENTS.add(event);
+        while (CLIENT_EVENTS.size() > MAX_HISTORY) CLIENT_EVENTS.poll();
         if (EVENTS_BY_ID.size() > MAX_HISTORY) {
             EVENTS_BY_ID.keySet().stream().limit(EVENTS_BY_ID.size() - MAX_HISTORY).forEach(EVENTS_BY_ID::remove);
         }
@@ -123,6 +124,15 @@ public final class AntiRatRuntime {
 
     public static boolean runtimeLockedDown(String modId) {
         return modId != null && RUNTIME_LOCKED_MODS.contains(modId);
+    }
+
+    /** Exact local review override for non-credential runtime capabilities. */
+    public static boolean runtimeHashAllowed(String modId) {
+        if (modId == null || runtimeLockedDown(modId)) return false;
+        if (Boolean.getBoolean("antirat.runtime.fixture")
+                && modId.equals("zzz-antirat-runtime-fixture")) return false;
+        com.antirat.scan.ScanResult result = com.antirat.scan.ScanRegistry.startupResult(modId);
+        return result != null && config.isHashAllowed(result.sha256());
     }
 
     public static void lockdownMod(String modId) {
@@ -165,6 +175,7 @@ public final class AntiRatRuntime {
 
     private static boolean stalePendingEntry(StartupReport.Entry entry) {
         if (entry.status() != ScanStatus.QUARANTINED
+                && entry.status() != ScanStatus.QUARANTINE_PENDING
                 && entry.status() != ScanStatus.DEPENDENCY_QUARANTINED) return false;
 
         // Reinstalling/upgrading the same mod ID supersedes an older quarantined artifact. The
@@ -175,7 +186,8 @@ public final class AntiRatRuntime {
 
         // Static startup quarantines can be safely rescored under the current detector. Runtime
         // behavioral quarantines are deliberately not cleared by a later static-only scan.
-        if (entry.status() != ScanStatus.QUARANTINED
+        if ((entry.status() != ScanStatus.QUARANTINED
+                && entry.status() != ScanStatus.QUARANTINE_PENDING)
                 || !entry.message().equals("Moved out of the Fabric mods path before normal mod initialization")) {
             return false;
         }
@@ -192,14 +204,18 @@ public final class AntiRatRuntime {
 
     private static void reportPendingEntry(StartupReport.Entry entry) {
         boolean direct = entry.status() == ScanStatus.QUARANTINED;
+        boolean pendingRemoval = entry.status() == ScanStatus.QUARANTINE_PENDING;
         boolean dependent = entry.status() == ScanStatus.DEPENDENCY_QUARANTINED;
-        boolean quarantined = direct || dependent;
-        ThreatType type = direct ? ThreatType.MOD_QUARANTINED
+        boolean quarantined = direct || pendingRemoval || dependent;
+        ThreatType type = direct || pendingRemoval ? ThreatType.MOD_QUARANTINED
                 : dependent ? ThreatType.MOD_DEPENDENCY_DISABLED : ThreatType.QUARANTINE_FAILURE;
         String title = direct ? "Threat prevented and quarantined"
+                : pendingRemoval ? "Threat prevented; removal scheduled"
                 : dependent ? "Dependent mod disabled for clean launch" : "Threat detected; quarantine failed";
         String summary = direct
                 ? "AntiRat moved this jar out of the Fabric mods path before normal mod initialization and denied its guarded capabilities in the original process."
+                : pendingRemoval
+                ? "The operating system kept the discovered jar open, so AntiRat suppressed its entrypoints, locked its capabilities, made a verified quarantine copy, and scheduled the original for removal after exit."
                 : dependent
                 ? "AntiRat disabled this jar because it declared a hard dependency on a quarantined threat."
                 : "AntiRat detected a high-confidence malicious behavior chain but could not verify quarantine.";

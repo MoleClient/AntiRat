@@ -201,7 +201,8 @@ tasks.register('verifyRuntimeFixtureResult') {
         Properties result = new Properties()
         marker.withInputStream { result.load(it) }
         List<String> required = [
-                'agentActive', 'callerAttributed', 'tokenGuardDenied', 'sessionTokenBlocked', 'sessionIdBlocked',
+                'agentActive', 'callerAttributed', 'tokenGuardDenied', 'credentialMixinArgumentBlocked',
+                'sessionTokenBlocked', 'sessionIdBlocked',
                 'webhookBlocked', 'credentialFileBlocked', 'credentialCopyBlocked', 'credentialFileUrlBlocked',
                 'reflectiveFileBlocked', 'reflectiveMetadataBlocked', 'reflectiveConstructorBlocked',
                 'scannerFileBlocked', 'methodHandleFileBlocked', 'reflectiveLookupFileBlocked',

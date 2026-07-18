@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -33,6 +34,16 @@ final class QuarantineManager {
     }
 
     static StartupReport.Entry quarantine(Path gameDir, ScanResult result, ScanStatus successStatus, String successMessage) {
+        return quarantine(gameDir, result, successStatus, successMessage, false);
+    }
+
+    static StartupReport.Entry quarantineDeferredForTest(Path gameDir, ScanResult result) {
+        return quarantine(gameDir, result, ScanStatus.QUARANTINED, "test", true);
+    }
+
+    private static StartupReport.Entry quarantine(
+            Path gameDir, ScanResult result, ScanStatus successStatus, String successMessage, boolean forceDeferred
+    ) {
         if (successStatus != ScanStatus.QUARANTINED && successStatus != ScanStatus.DEPENDENCY_QUARANTINED) {
             throw new IllegalArgumentException("invalid quarantine success status");
         }
@@ -44,15 +55,27 @@ final class QuarantineManager {
             Files.createDirectories(directory);
             String fileName = sanitize(source.getFileName().toString());
             destination = uniqueDestination(directory, result.sha256().substring(0, 16) + "-" + fileName + ".disabled");
-            move(source, destination);
-            if (Files.exists(source) || !Files.isRegularFile(destination)) {
-                throw new IOException("post-move quarantine verification failed");
+            boolean pendingRemoval = false;
+            try {
+                if (forceDeferred) throw new IOException("simulated locked JAR");
+                move(source, destination);
+            } catch (IOException locked) {
+                copyForDeferredRemoval(source, destination, result.sha256(), locked);
+                pendingRemoval = true;
             }
-            writeSidecar(destination, result);
-            return StartupReport.Entry.fromScan(result, successStatus, destination, successMessage);
+            if ((!pendingRemoval && Files.exists(source)) || !Files.isRegularFile(destination)
+                    || !sha256(destination).equalsIgnoreCase(result.sha256())) {
+                throw new IOException("post-quarantine content verification failed");
+            }
+            writeSidecar(destination, result, pendingRemoval);
+            return StartupReport.Entry.fromScan(result,
+                    pendingRemoval ? ScanStatus.QUARANTINE_PENDING : successStatus, destination,
+                    pendingRemoval
+                            ? "A verified quarantine copy was created; the loaded/locked original is suppressed and scheduled for removal when this game process exits"
+                            : successMessage);
         } catch (IOException | RuntimeException exception) {
             return StartupReport.Entry.fromScan(result, ScanStatus.QUARANTINE_FAILED, destination,
-                    exception.getClass().getSimpleName() + ": " + safeMessage(exception.getMessage()));
+                    failureMessage(exception));
         }
     }
 
@@ -123,7 +146,30 @@ final class QuarantineManager {
         }
     }
 
-    private static void writeSidecar(Path quarantined, ScanResult result) throws IOException {
+    private static void copyForDeferredRemoval(
+            Path source, Path destination, String expectedSha256, IOException moveFailure
+    ) throws IOException {
+        try {
+            Files.copy(source, destination);
+            if (!Files.isRegularFile(destination) || !sha256(destination).equalsIgnoreCase(expectedSha256)) {
+                throw new IOException("deferred quarantine copy did not match the scanned SHA-256");
+            }
+            if (!DeferredQuarantineHelper.schedule(source, expectedSha256)) {
+                throw new IOException("could not start the locked-file removal helper");
+            }
+        } catch (IOException | RuntimeException fallbackFailure) {
+            try {
+                Files.deleteIfExists(destination);
+            } catch (IOException cleanupFailure) {
+                fallbackFailure.addSuppressed(cleanupFailure);
+            }
+            fallbackFailure.addSuppressed(moveFailure);
+            if (fallbackFailure instanceof IOException io) throw io;
+            throw fallbackFailure;
+        }
+    }
+
+    private static void writeSidecar(Path quarantined, ScanResult result, boolean pendingRemoval) throws IOException {
         Properties properties = new Properties();
         properties.setProperty("originalPath", result.source().toString());
         properties.setProperty("sha256", result.sha256());
@@ -131,6 +177,7 @@ final class QuarantineManager {
         properties.setProperty("modName", result.modName());
         properties.setProperty("score", Integer.toString(result.score()));
         properties.setProperty("timestamp", Instant.now().toString());
+        properties.setProperty("pendingRemoval", Boolean.toString(pendingRemoval));
         Path sidecar = quarantined.resolveSibling(quarantined.getFileName() + ".properties");
         try (OutputStream output = Files.newOutputStream(sidecar)) {
             properties.store(output, "AntiRat quarantine metadata - do not rename to .jar");
@@ -208,7 +255,25 @@ final class QuarantineManager {
 
     private static String safeMessage(String value) {
         if (value == null || value.isBlank()) return "unspecified I/O failure";
-        return value.length() <= 240 ? value : value.substring(0, 240);
+        return value.length() <= 480 ? value : value.substring(0, 477) + "...";
+    }
+
+    private static String failureMessage(Throwable failure) {
+        StringBuilder message = new StringBuilder(failure.getClass().getSimpleName());
+        if (failure instanceof FileSystemException filesystem && filesystem.getReason() != null
+                && !filesystem.getReason().isBlank()) {
+            message.append(": ").append(filesystem.getReason());
+        } else if (failure.getMessage() != null && !failure.getMessage().isBlank()) {
+            message.append(": ").append(failure.getMessage());
+        }
+        for (Throwable suppressed : failure.getSuppressed()) {
+            if (suppressed instanceof FileSystemException filesystem && filesystem.getReason() != null
+                    && !filesystem.getReason().isBlank()) {
+                message.append("; original move: ").append(filesystem.getReason());
+                break;
+            }
+        }
+        return safeMessage(message.toString());
     }
 
     record Artifact(

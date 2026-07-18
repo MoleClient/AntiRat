@@ -234,17 +234,22 @@ public final class AntiRatCommands {
             StartupReport.Entry entry = QuarantineManager.quarantine(gameDir, result, ScanStatus.QUARANTINED,
                     "Manually quarantined with /antirat; no restart was requested");
             StartupReport.mergePending(gameDir, List.of(entry), "manual-command");
-            if (entry.status() != ScanStatus.QUARANTINED) {
+            boolean pendingRemoval = entry.status() == ScanStatus.QUARANTINE_PENDING;
+            if (entry.status() != ScanStatus.QUARANTINED && !pendingRemoval) {
                 error("Could not quarantine " + modId + ": " + entry.message());
                 return;
             }
             AntiRatRuntime.report(ThreatEvent.create(ThreatType.MOD_QUARANTINED, RiskLevel.INFO,
                     "Mod manually quarantined",
-                    "The selected JAR was moved out of mods. Already-loaded classes remain active until Minecraft closes.",
+                    pendingRemoval
+                            ? "The selected JAR is locked by the running game; its capabilities are denied and verified removal is scheduled for process exit."
+                            : "The selected JAR was moved out of mods. Already-loaded classes remain active until Minecraft closes.",
                     result.modId(), result.modName(), entry.originalPath(), entry.quarantinePath(), true,
                     100, "The mod will be absent on the next launch. Use /antirat unquarantine " + result.modId()
                             + " to restore it.", List.of("Manual local command", "No restart was initiated")));
-            message("Quarantined " + result.modId() + ". It remains loaded until you normally close Minecraft.",
+            message((pendingRemoval ? "Contained " : "Quarantined ") + result.modId()
+                            + (pendingRemoval ? "; its locked JAR will be removed after Minecraft closes."
+                            : ". It remains loaded until you normally close Minecraft."),
                     UiColor.GOLD);
         } catch (Exception failure) {
             error("Could not quarantine " + modId + ": " + safeMessage(failure));

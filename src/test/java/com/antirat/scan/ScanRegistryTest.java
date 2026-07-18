@@ -41,6 +41,26 @@ class ScanRegistryTest {
         assertNotEquals(first.sha256(), verification.result().sha256());
     }
 
+    @Test
+    void repeatedCredentialChecksReuseRecentFullHashVerification() throws Exception {
+        Path source = temporaryDirectory.resolve("polled.jar");
+        createJar(source, "benign-polled-token-api");
+        ScanResult first = new JarScanner(AntiRatConfig.defaults()).scan(source);
+        ScanRegistry.record(first);
+
+        ScanRegistry.Verification initial = ScanRegistry.verifyCurrent(
+                first.modId(), source, AntiRatConfig.defaults());
+        assertTrue(initial.verified());
+        assertTrue(!initial.cached());
+
+        for (int index = 0; index < 10_000; index++) {
+            ScanRegistry.Verification repeated = ScanRegistry.verifyCurrent(
+                    first.modId(), source, AntiRatConfig.defaults());
+            assertTrue(repeated.verified());
+            assertTrue(repeated.cached());
+        }
+    }
+
     private static void createJar(Path path, String payload) throws Exception {
         try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
             write(output, "fabric.mod.json",

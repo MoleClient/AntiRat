@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$ROOT/dist"
-MOD_VERSION="2.0.0"
+MOD_VERSION="2.0.1"
 LEGACY_GRADLE_HOME="${ANTIRAT_LEGACY_GRADLE_HOME:-${TMPDIR:-/tmp}/antirat-gradle-legacy}"
 MODERN_GRADLE_HOME="${ANTIRAT_MODERN_GRADLE_HOME:-${TMPDIR:-/tmp}/antirat-gradle-modern}"
 

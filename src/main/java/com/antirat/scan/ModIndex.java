@@ -26,6 +26,7 @@ public final class ModIndex {
     private static final Map<String, ModIdentity> CLASS_OWNERS = new ConcurrentHashMap<>();
     private static final Map<Class<?>, ModIdentity> CLASS_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, Set<Path>> MOD_ORIGINS = new ConcurrentHashMap<>();
+    private static final Map<String, ModIdentity> MOD_IDENTITIES = new ConcurrentHashMap<>();
     private static final Map<Path, ModIdentity> RUNTIME_ORIGIN_OWNERS = new ConcurrentHashMap<>();
     private static final Set<Path> TRUSTED_PATHS = ConcurrentHashMap.newKeySet();
 
@@ -52,6 +53,7 @@ public final class ModIndex {
             String id = container.getMetadata().getId();
             boolean infrastructure = isInfrastructure(id);
             ModIdentity identity = new ModIdentity(id, container.getMetadata().getName());
+            if (!infrastructure) MOD_IDENTITIES.put(id, identity);
             for (Path origin : safeOriginPaths(container)) {
                 Path normalized = realOrNormalized(origin);
                 if (infrastructure) TRUSTED_PATHS.add(normalized);
@@ -88,6 +90,29 @@ public final class ModIndex {
                 .map(ModIndex::ownerOf)
                 .filter(ModIdentity::known)
                 .toList()));
+    }
+
+    /** Fast attribution for an already identified direct caller class. */
+    public static ModIdentity findByClass(Class<?> type) {
+        initialize();
+        return type == null ? ModIdentity.UNKNOWN : ownerOf(type);
+    }
+
+    /** Resolves the mod id Mixin embeds in a copied handler name such as handler$abc$modid$hook. */
+    public static ModIdentity findMergedMixinOwner(String methodName) {
+        initialize();
+        if (methodName == null || methodName.isBlank()) return ModIdentity.UNKNOWN;
+        String normalized = methodName.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        ModIdentity best = ModIdentity.UNKNOWN;
+        int bestLength = 0;
+        for (Map.Entry<String, ModIdentity> entry : MOD_IDENTITIES.entrySet()) {
+            String id = entry.getKey().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
+            if (id.length() >= 3 && id.length() > bestLength && normalized.contains(id)) {
+                best = entry.getValue();
+                bestLength = id.length();
+            }
+        }
+        return best;
     }
 
     /** Distinguishes a platform-only call from unattributed code, which is important for fail-closed token access. */

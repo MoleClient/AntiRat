@@ -4,6 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import com.antirat.guard.TokenGuard;
+import com.antirat.guard.RuntimeHooks;
 import com.antirat.scan.ModIndex;
 import com.antirat.AntiRatRuntime;
 import com.antirat.client.AntiRatClient;
@@ -47,6 +48,12 @@ public final class RuntimeAttackFixture implements ClientModInitializer {
         ModIndex.CallerContext caller = ModIndex.findCredentialCaller();
         result.setProperty("callerAttributed", Boolean.toString(caller.source().known()));
         result.setProperty("tokenGuardDenied", Boolean.toString(TokenGuard.shouldDenySessionToken()));
+
+        String constructorCapture = RuntimeHooks.spoofCredentialMixinArgument(
+                "eyJhbGciOiJIUzI1NiJ9.inert-runtime-fixture.signature", false,
+                "handler$fixture$tokenreader$onUserConstructed");
+        result.setProperty("credentialMixinArgumentBlocked",
+                Boolean.toString(constructorCapture == null || constructorCapture.isEmpty()));
 
         String token = client.getSession().getAccessToken();
         result.setProperty("sessionTokenBlocked", Boolean.toString(token == null || token.isEmpty()));

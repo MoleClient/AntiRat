@@ -79,8 +79,11 @@ import javax.net.SocketFactory;
  */
 public final class RuntimeHooks {
     private static final long REPORT_SUPPRESS_MS = 15_000L;
+    private static final int MAX_REPORT_KEYS = 1_024;
     private static final Map<String, Long> LAST_REPORT = new ConcurrentHashMap<>();
     private static final StackWalker REFLECTION_CALLER_WALKER =
+            StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+    private static final StackWalker DIRECT_CALLER_WALKER =
             StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
 
     private RuntimeHooks() {
@@ -1053,6 +1056,7 @@ public final class RuntimeHooks {
 
     public static void guardDynamicCode() {
         ModIdentity source = ModIndex.findByCurrentStack();
+        if (AntiRatRuntime.runtimeHashAllowed(source.id())) return;
         ScanResult scan = ScanRegistry.startupResult(source.id());
         boolean denied = !source.known() || AntiRatRuntime.runtimeLockedDown(source.id())
                 || AntiRatRuntime.capabilityDenied(source.id(), Capability.DYNAMIC_CODE)
@@ -1071,19 +1075,20 @@ public final class RuntimeHooks {
     }
 
     public static void guardUnsafeOperation() {
-        if (!unsafeOperationDenied()) return;
-        reportUnsafeDenied();
+        ModIdentity source = ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass());
+        if (!unsafeOperationDenied(source)) return;
+        reportUnsafeDenied(source);
         throw new SecurityException("AntiRat blocked unrestricted Unsafe access");
     }
 
-    private static boolean guardUnsafeOperationNonFatal() {
-        if (!unsafeOperationDenied()) return false;
-        reportUnsafeDenied();
+    private static boolean guardUnsafeOperationNonFatal(ModIdentity source) {
+        if (!unsafeOperationDenied(source)) return false;
+        reportUnsafeDenied(source);
         return true;
     }
 
-    private static boolean unsafeOperationDenied() {
-        ModIdentity source = ModIndex.findByCurrentStack();
+    private static boolean unsafeOperationDenied(ModIdentity source) {
+        if (AntiRatRuntime.runtimeHashAllowed(source.id())) return false;
         if (!source.known() || AntiRatRuntime.runtimeLockedDown(source.id())) return true;
         ScanResult scan = ScanRegistry.startupResult(source.id());
         return AntiRatRuntime.riskForMod(source.id()).atLeast(RiskLevel.HIGH)
@@ -1094,8 +1099,7 @@ public final class RuntimeHooks {
                 || (scan.highConfidence() && scan.riskLevel().atLeast(RiskLevel.HIGH));
     }
 
-    private static void reportUnsafeDenied() {
-        ModIdentity source = ModIndex.findByCurrentStack();
+    private static void reportUnsafeDenied(ModIdentity source) {
         reportOnce(ThreatType.DYNAMIC_CODE_EXECUTION, RiskLevel.CRITICAL,
                 "Blocked unrestricted memory access",
                 "A risky or unattributed mod attempted an Unsafe operation that can bypass Java access and instrumentation barriers.",
@@ -1106,7 +1110,7 @@ public final class RuntimeHooks {
 
     @SuppressWarnings("removal")
     public static void unsafeCopyMemory(sun.misc.Unsafe unsafe, long source, long destination, long bytes) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.copyMemory(source, destination, bytes);
     }
 
@@ -1115,49 +1119,49 @@ public final class RuntimeHooks {
             sun.misc.Unsafe unsafe, Object source, long sourceOffset,
             Object destination, long destinationOffset, long bytes
     ) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.copyMemory(source, sourceOffset, destination, destinationOffset, bytes);
     }
 
     @SuppressWarnings("removal")
     public static void unsafeSetMemory(sun.misc.Unsafe unsafe, long address, long bytes, byte value) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.setMemory(address, bytes, value);
     }
 
     @SuppressWarnings("removal")
     public static void unsafeSetMemory(sun.misc.Unsafe unsafe, Object target, long offset, long bytes, byte value) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.setMemory(target, offset, bytes, value);
     }
 
     @SuppressWarnings("removal")
     public static long unsafeAllocateMemory(sun.misc.Unsafe unsafe, long bytes) {
-        if (guardUnsafeOperationNonFatal()) return 0L;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return 0L;
         return unsafe.allocateMemory(bytes);
     }
 
     @SuppressWarnings("removal")
     public static long unsafeReallocateMemory(sun.misc.Unsafe unsafe, long address, long bytes) {
-        if (guardUnsafeOperationNonFatal()) return 0L;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return 0L;
         return unsafe.reallocateMemory(address, bytes);
     }
 
     @SuppressWarnings("removal")
     public static void unsafeFreeMemory(sun.misc.Unsafe unsafe, long address) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.freeMemory(address);
     }
 
     @SuppressWarnings("removal")
     public static long unsafeGetAddress(sun.misc.Unsafe unsafe, long address) {
-        if (guardUnsafeOperationNonFatal()) return 0L;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return 0L;
         return unsafe.getAddress(address);
     }
 
     @SuppressWarnings("removal")
     public static void unsafePutAddress(sun.misc.Unsafe unsafe, long address, long value) {
-        if (guardUnsafeOperationNonFatal()) return;
+        if (guardUnsafeOperationNonFatal(ModIndex.findByClass(DIRECT_CALLER_WALKER.getCallerClass()))) return;
         unsafe.putAddress(address, value);
     }
 
@@ -1254,6 +1258,7 @@ public final class RuntimeHooks {
             throw new SecurityException("AntiRat denied Unsafe Session allocation");
         }
         ModIdentity source = ModIndex.findByCurrentStack();
+        if (AntiRatRuntime.runtimeHashAllowed(source.id())) return unsafe.allocateInstance(type);
         ScanResult scan = ScanRegistry.startupResult(source.id());
         boolean denied = !source.known() || AntiRatRuntime.runtimeLockedDown(source.id())
                 || AntiRatRuntime.riskForMod(source.id()).atLeast(RiskLevel.HIGH)
@@ -1453,6 +1458,41 @@ public final class RuntimeHooks {
     public static String directSessionTokenField(Object session, String fieldName) {
         blockDirectSessionAccess("Direct bytecode access to Minecraft's session-token field was denied");
         return "";
+    }
+
+    /**
+     * Runs at the first instruction of a Mixin handler copied into User/Session. The value is
+     * intentionally neither retained nor logged. The second String in the carrier constructor is
+     * the access token on supported layouts; single captured arguments are redacted when their
+     * shape matches a real session/JWT value.
+     */
+    public static String spoofCredentialMixinArgument(String value, boolean credentialPosition, String handlerName) {
+        if (value == null || (!credentialPosition && !looksLikeSessionCredential(value))) return value;
+        ModIdentity source = ModIndex.findMergedMixinOwner(handlerName);
+        reportOnce(ThreatType.SESSION_TOKEN_ACCESS, RiskLevel.CRITICAL,
+                "Session token capture prevented",
+                "AntiRat replaced a credential argument before a mod-injected Minecraft handler could read it.",
+                source, "Minecraft credential constructor", 99,
+                "Remove the source mod unless its direct credential interception is intentional and independently reviewed.",
+                List.of("Credential-carrier Mixin handler was intercepted at method entry",
+                        "The original credential value was not logged or retained"));
+        return "";
+    }
+
+    private static boolean looksLikeSessionCredential(String value) {
+        if (value.startsWith("token:") || value.startsWith("Bearer ")) return true;
+        if (value.length() < 24) return false;
+        int dots = 0;
+        int tokenCharacters = 0;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (character == '.') dots++;
+            if (Character.isLetterOrDigit(character) || character == '-' || character == '_'
+                    || character == '.' || character == '+' || character == '/' || character == '=') {
+                tokenCharacters++;
+            }
+        }
+        return dots >= 2 || (value.length() >= 64 && tokenCharacters * 100 / value.length() >= 92);
     }
 
     private static MethodHandle spoofedSessionGetter(Class<?> owner, MethodType type) throws IllegalAccessException {
@@ -1788,6 +1828,7 @@ public final class RuntimeHooks {
             }
             return;
         }
+        if (SensitiveNetworkPolicy.fastAllowTrustedHost(uri)) return;
         ModIdentity source = ModIndex.findByCurrentStack();
         NetworkDecision decision = SensitiveNetworkPolicy.classify(uri, source);
         if (decision.report()) {
@@ -1801,6 +1842,7 @@ public final class RuntimeHooks {
 
     private static void checkProcess(String executable) {
         ModIdentity source = ModIndex.findByCurrentStack();
+        if (AntiRatRuntime.runtimeHashAllowed(source.id())) return;
         String leaf = executableLeaf(executable);
         boolean interpreter = Set.of("powershell", "powershell.exe", "pwsh", "cmd", "cmd.exe", "sh", "bash",
                 "zsh", "fish", "dash", "csh", "ksh", "busybox", "wscript", "wscript.exe", "cscript",
@@ -1826,6 +1868,7 @@ public final class RuntimeHooks {
 
     private static void checkNativeLoad(String name) {
         ModIdentity source = ModIndex.findByCurrentStack();
+        if (AntiRatRuntime.runtimeHashAllowed(source.id())) return;
         ScanResult scan = ScanRegistry.startupResult(source.id());
         boolean denied = !source.known() || AntiRatRuntime.runtimeLockedDown(source.id())
                 || AntiRatRuntime.riskForMod(source.id()).atLeast(RiskLevel.HIGH)
@@ -2280,6 +2323,11 @@ public final class RuntimeHooks {
         long now = System.currentTimeMillis();
         String key = type.name() + '|' + source.id() + '|' + title + '|' + target;
         Long previous = LAST_REPORT.put(key, now);
+        if (LAST_REPORT.size() > MAX_REPORT_KEYS) {
+            long cutoff = now - REPORT_SUPPRESS_MS * 2;
+            LAST_REPORT.entrySet().removeIf(entry -> entry.getValue() < cutoff);
+            if (LAST_REPORT.size() > MAX_REPORT_KEYS * 2) LAST_REPORT.clear();
+        }
         if (previous != null && now - previous <= REPORT_SUPPRESS_MS) return;
         AntiRatRuntime.report(ThreatEvent.create(type, risk, title, summary, source.id(), source.name(), "", target,
                 true, accuracy, tip, evidence));

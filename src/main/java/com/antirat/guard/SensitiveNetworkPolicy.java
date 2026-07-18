@@ -51,6 +51,10 @@ final class SensitiveNetworkPolicy {
         String fullTarget = canonicalComponent(uri.toASCIIString());
         List<String> evidence = new ArrayList<>();
 
+        // Explicit hash trust covers ordinary runtime capabilities, but never overrides fixed
+        // exfiltration endpoints below; a reviewed mod should not need a Discord/Telegram stealer route.
+        boolean runtimeOverride = AntiRatRuntime.runtimeHashAllowed(source.id());
+
         RiskLevel sourceRisk = AntiRatRuntime.riskForMod(source.id());
         boolean networkDenied = AntiRatRuntime.capabilityDenied(source.id(), Capability.UNTRUSTED_NETWORK);
         ScanResult startupScan = ScanRegistry.startupResult(source.id());
@@ -101,6 +105,8 @@ final class SensitiveNetworkPolicy {
                     "Request collection hosts are a strong malware indicator in distributed client mods.",
                     evidence);
         }
+
+        if (runtimeOverride) return NetworkDecision.allow();
 
         boolean sensitivePayload = containsSensitiveTokenMarker(path) || containsSensitiveTokenMarker(query)
                 || containsSensitiveTokenMarker(userInfo);
@@ -162,6 +168,16 @@ final class SensitiveNetworkPolicy {
         }
 
         return NetworkDecision.allow();
+    }
+
+    /** Avoids a stack walk for the high-volume first-party endpoints the full policy always allows. */
+    static boolean fastAllowTrustedHost(URI uri) {
+        if (uri == null) return false;
+        String scheme = safeLower(uri.getScheme());
+        if (!scheme.equals("http") && !scheme.equals("https") && !scheme.equals("ws") && !scheme.equals("wss")) {
+            return false;
+        }
+        return isTrustedHost(normalizedHost(uri.getHost()));
     }
 
     private static NetworkDecision block(

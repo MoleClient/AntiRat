@@ -242,7 +242,7 @@ public final class JarScanner {
                 && ((local.contains(Feature.AUTHLIB_JOIN_REQUEST_TARGET)
                 && (local.contains(Feature.MIXIN_INJECTOR) || local.contains(Feature.MIXIN_ACCESSOR)))
                 || (local.contains(Feature.SESSION_ACCESS) && local.contains(Feature.TOKEN_MARKER)
-                && local.contains(Feature.MIXIN_ACCESSOR)))) {
+                && (local.contains(Feature.MIXIN_ACCESSOR) || local.contains(Feature.MIXIN_INJECTOR))))) {
             local.add(Feature.CREDENTIAL_INTERCEPTOR_MIXIN);
         }
 
@@ -273,6 +273,8 @@ public final class JarScanner {
         EnumSet<Feature> features = EnumSet.noneOf(Feature.class);
         if (containsAny(value, "net/minecraft/client/session/session", "net/minecraft/class_320",
                 "net/minecraft/client/user",
+                "net.minecraft.client.session.session", "net.minecraft.class_320",
+                "net.minecraft.client.user",
                 "getaccesstoken", "method_1674", "getsessionid", "method_1675",
                 "getsession", "method_1548")) features.add(Feature.SESSION_ACCESS);
         if (containsAny(value, "launcher_accounts.json", "launcher_profiles.json", "clienttoken",

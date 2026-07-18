@@ -7,6 +7,7 @@ import org.objectweb.asm.ConstantDynamic;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
@@ -69,11 +70,14 @@ final class ModCallSiteTransformer implements ClassFileTransformer {
             ProtectionDomain protectionDomain,
             byte[] classfileBuffer
     ) throws IllegalClassFormatException {
-        if (loader == null || className == null || classfileBuffer == null
-                || !eligible(module, className, protectionDomain)
-                || !containsAnyNeedle(classfileBuffer)) return null;
+        if (loader == null || className == null || classfileBuffer == null) return null;
+        boolean credentialCarrier = isSessionOwner(className);
+        if ((!credentialCarrier && !eligible(module, className, protectionDomain))
+                || (!credentialCarrier && !containsAnyNeedle(classfileBuffer))) return null;
         try {
-            return transformBytes(classfileBuffer);
+            return credentialCarrier
+                    ? transformCredentialCarrierBytes(classfileBuffer)
+                    : transformBytes(classfileBuffer);
         } catch (RuntimeException | LinkageError failure) {
             IllegalClassFormatException denied = new IllegalClassFormatException(
                     "AntiRat could not safely instrument a security-sensitive application class");
@@ -84,9 +88,11 @@ final class ModCallSiteTransformer implements ClassFileTransformer {
 
     static boolean shouldRetransform(Class<?> type) {
         if (type == null || type.isArray() || type.isPrimitive()) return false;
-        return eligible(type.getModule(), type.getName().replace('.', '/'), type.getProtectionDomain())
+        String className = type.getName().replace('.', '/');
+        return isSessionOwner(className)
+                || (eligible(type.getModule(), className, type.getProtectionDomain())
                 && (isModOrigin(type.getProtectionDomain())
-                || startsWithAny(type.getName().replace('.', '/'), REFLECTION_LIBRARY_PREFIXES));
+                || startsWithAny(className, REFLECTION_LIBRARY_PREFIXES)));
     }
 
     static boolean eligibleForTest(String className, ProtectionDomain protectionDomain) {
@@ -136,6 +142,70 @@ final class ModCallSiteTransformer implements ClassFileTransformer {
         };
         reader.accept(visitor, 0);
         return writer.toByteArray();
+    }
+
+    /**
+     * Mixin handler methods are copied into their Minecraft target class. That makes ordinary
+     * CodeSource/stack attribution see a trusted Minecraft class even though the handler came
+     * from a mod. Guard the copied handler itself and redact credential-looking constructor
+     * arguments before its first instruction can observe them.
+     */
+    static byte[] transformCredentialCarrierBytes(byte[] input) {
+        ClassReader reader = new ClassReader(input);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
+                                             String[] exceptions) {
+                MethodVisitor delegate = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (!isCopiedMixinHandler(access, name)) return delegate;
+                MethodVisitor guarded = new GuardingMethodVisitor(delegate);
+                return new CredentialHandlerVisitor(guarded, access, name, descriptor);
+            }
+        };
+        reader.accept(visitor, 0);
+        return writer.toByteArray();
+    }
+
+    private static boolean isCopiedMixinHandler(int access, String name) {
+        if (name == null || name.startsWith("antirat$") || name.startsWith("lambda$")) return false;
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        return lower.startsWith("handler$") || lower.startsWith("redirect$")
+                || lower.startsWith("modify$") || lower.startsWith("wrap$")
+                || ((access & Opcodes.ACC_SYNTHETIC) != 0 && name.indexOf('$') >= 0);
+    }
+
+    private static final class CredentialHandlerVisitor extends MethodVisitor {
+        private final int access;
+        private final String methodName;
+        private final String descriptor;
+
+        private CredentialHandlerVisitor(MethodVisitor delegate, int access, String methodName, String descriptor) {
+            super(Opcodes.ASM9, delegate);
+            this.access = access;
+            this.methodName = methodName;
+            this.descriptor = descriptor;
+        }
+
+        @Override
+        public void visitCode() {
+            super.visitCode();
+            int local = (access & Opcodes.ACC_STATIC) == 0 ? 1 : 0;
+            int stringOrdinal = 0;
+            for (Type argument : Type.getArgumentTypes(descriptor)) {
+                if (argument.getSort() == Type.OBJECT
+                        && argument.getInternalName().equals("java/lang/String")) {
+                    stringOrdinal++;
+                    super.visitVarInsn(Opcodes.ALOAD, local);
+                    super.visitInsn(stringOrdinal >= 2 ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    super.visitLdcInsn(methodName);
+                    super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOKS, "spoofCredentialMixinArgument",
+                            "(Ljava/lang/String;ZLjava/lang/String;)Ljava/lang/String;", false);
+                    super.visitVarInsn(Opcodes.ASTORE, local);
+                }
+                local += argument.getSize();
+            }
+        }
     }
 
     private static final class GuardingMethodVisitor extends MethodVisitor {

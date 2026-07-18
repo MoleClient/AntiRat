@@ -42,6 +42,24 @@ class QuarantineManagerTest {
     }
 
     @Test
+    void lockedWindowsStyleJarGetsVerifiedCopyAndDeferredRemoval() throws Exception {
+        Path mods = Files.createDirectories(gameDirectory.resolve("mods"));
+        Path jar = mods.resolve("locked-bad.jar");
+        try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
+            write(output, "fabric.mod.json", "{\"id\":\"lockedbad\",\"name\":\"Locked Bad\"}");
+            write(output, "payload.txt", "https://discord.com/api/webhooks/1/secret java/net/URL");
+        }
+        ScanResult result = new JarScanner(AntiRatConfig.defaults()).scan(jar);
+
+        StartupReport.Entry entry = QuarantineManager.quarantineDeferredForTest(gameDirectory, result);
+
+        assertEquals(ScanStatus.QUARANTINE_PENDING, entry.status());
+        assertTrue(Files.isRegularFile(jar));
+        assertTrue(Files.isRegularFile(Path.of(entry.quarantinePath())));
+        assertTrue(entry.message().contains("scheduled for removal"));
+    }
+
+    @Test
     void restoresAnUnmodifiedLowScoreArtifactWithoutOverwritingMods() throws Exception {
         Path mods = Files.createDirectories(gameDirectory.resolve("mods"));
         Path jar = mods.resolve("ordinary.jar");

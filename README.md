@@ -26,13 +26,13 @@ The animated threat-details panel is implemented against each supported Minecraf
 
 | Minecraft | Java | Release asset |
 | --- | ---: | --- |
-| 1.21.1 | 21 | `antirat-1.21.1-2.0.0.jar` |
-| 1.21.4 | 21 | `antirat-1.21.4-2.0.0.jar` |
-| 1.21.8 | 21 | `antirat-1.21.8-2.0.0.jar` |
-| 1.21.11 | 21 | `antirat-1.21.11-2.0.0.jar` |
-| 26.1 | 25 | `antirat-26.1-2.0.0.jar` |
-| 26.1.2 | 25 | `antirat-26.1.2-2.0.0.jar` |
-| 26.2 | 25 | `antirat-26.2-2.0.0.jar` |
+| 1.21.1 | 21 | `antirat-1.21.1-2.0.1.jar` |
+| 1.21.4 | 21 | `antirat-1.21.4-2.0.1.jar` |
+| 1.21.8 | 21 | `antirat-1.21.8-2.0.1.jar` |
+| 1.21.11 | 21 | `antirat-1.21.11-2.0.1.jar` |
+| 26.1 | 25 | `antirat-26.1-2.0.1.jar` |
+| 26.1.2 | 25 | `antirat-26.1.2-2.0.1.jar` |
+| 26.2 | 25 | `antirat-26.2-2.0.1.jar` |
 
 Every release JAR declares one exact Minecraft version. Fabric will reject an artifact placed in a neighboring version rather than attempting to load incompatible mixins.
 
@@ -69,9 +69,9 @@ Obfuscation, networking, token APIs, nested JARs, native files, or entropy are n
 
 ### Session and Authlib barriers
 
-When mod code requests a Minecraft session credential, AntiRat attributes the live call chain to its source JAR, recalculates its SHA-256 identity, and reuses a startup verdict only when the bytes are unchanged. Safe verified callers remain compatible; risky, changed, locked-down, or unattributed callers receive empty spoofed data.
+When mod code requests a Minecraft session credential, AntiRat attributes the live call chain to its source JAR and validates it against the startup SHA-256 identity. A recent successful full-hash comparison is cached for five seconds so a caller polling the API cannot hash a large JAR every frame; metadata changes force the full comparison immediately. Safe verified callers remain compatible, while risky, changed, locked-down, or unattributed callers receive empty spoofed data.
 
-Coverage includes standard session accessors, session IDs, direct field access, reflection, nested reflection, MethodHandles, method references, VarHandles, Unsafe routes, and Authlib join-request credential carriers. Original Minecraft and Microsoft authentication origins are treated separately so AntiRat does not intentionally interfere with normal server authentication.
+Coverage includes standard session accessors, session IDs, direct field access, reflection, nested reflection, MethodHandles, method references, VarHandles, Unsafe routes, Authlib join-request credential carriers, and Mixin handlers copied into `User` or `Session`. Copied handlers are instrumented inside the Minecraft-owned target so constructor arguments are spoofed before the first handler instruction can read them. Original Minecraft and Microsoft authentication origins are treated separately so AntiRat does not intentionally interfere with normal server authentication.
 
 ### File, network, and escape barriers
 
@@ -89,6 +89,8 @@ AntiRat does not record credential values, request bodies, file contents, or ful
 ### Quarantine behavior
 
 Critical startup detections are moved from `mods` to `.antirat/quarantine/<timestamp>/` before their normal initializer can run. Required dependents are disabled when necessary so the next launch can resolve cleanly.
+
+If Windows keeps a discovered JAR open, AntiRat suppresses its Fabric entrypoints, denies its guarded capabilities, creates and hash-verifies the quarantine copy, and starts a minimal helper that removes the locked original after the game process releases it. The report distinguishes this pending state from both a completed move and a failed quarantine.
 
 Runtime detections immediately deny the attributed source's guarded capabilities and move its original JAR in a background containment task. Minecraft is not deliberately restarted in-world because abruptly terminating the client can damage world state. Already-loaded malicious code cannot be safely unloaded from a shared JVM, so it remains locked down until the player exits normally; the next launch omits the quarantined JAR.
 
@@ -109,14 +111,14 @@ AntiRat consumes its commands locally before they can be sent to a server.
 
 ## Verification
 
-Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 40 guarded behaviors and then opened the complete animated threat-details panel on each version. A target passed only after a real post-resource-reload frame reached the end of its entrance animation with the bundled logo ready and the evidence section still inside the panel bounds.
+Every supported target was compiled, unit-tested, and launched independently through Fabric Loader 0.19.3. An inert adversarial runtime fixture attempted 41 guarded behaviors and then opened the complete animated threat-details panel on each version. A target passed only after a real post-resource-reload frame reached the end of its entrance animation with the bundled logo ready and the evidence section still inside the panel bounds.
 
 | Verification | Result |
 | --- | ---: |
 | Supported Minecraft versions launched | 7 / 7 |
-| Live runtime barrier checks | 280 / 280 |
+| Live runtime barrier checks | 287 / 287 |
 | Animated popup render checks | 7 / 7 |
-| Total live assertions | 287 / 287 |
+| Total live assertions | 294 / 294 |
 | Release checksum and metadata audits | 7 / 7 |
 
 The fixture exercises session and Authlib access, credential files, file-copy and file-URL paths, reflection, constructors, scanners, MethodHandles, method references, asynchronous channels, JDBC, processes, pipelines, environment access, native loading, sockets, DNS, dynamic code, Unsafe, tampering, attribution, non-crashing memory containment, and runtime quarantine.
@@ -176,7 +178,7 @@ A locally reviewed startup false positive can be allowed by exact SHA-256 in `co
 allow.sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-That does not grant session-token access. A mod that genuinely requires the token needs a separate exact-binary override:
+This exact-binary review override also permits ordinary runtime capabilities such as Unsafe, native loading, and child processes, but it does not permit fixed credential-exfiltration endpoints or session-token access. A mod that genuinely requires the token needs a separate exact-binary override:
 
 ```properties
 allow.credentialSha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

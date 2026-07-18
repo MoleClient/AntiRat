@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 final class GuardedProxySelector extends ProxySelector {
     private static final long REPORT_SUPPRESS_MS = 15_000L;
+    private static final int MAX_REPORT_KEYS = 512;
 
     private final ProxySelector delegate;
     private final Map<String, Long> lastReportAt = new ConcurrentHashMap<>();
@@ -28,7 +29,7 @@ final class GuardedProxySelector extends ProxySelector {
 
     @Override
     public List<Proxy> select(URI uri) {
-        if (uri != null) {
+        if (uri != null && !SensitiveNetworkPolicy.fastAllowTrustedHost(uri)) {
             ModIdentity source = ModIndex.findByCurrentStack();
             NetworkDecision decision = SensitiveNetworkPolicy.classify(uri, source);
             if (decision.report() && shouldReport(uri, source, decision)) {
@@ -74,6 +75,11 @@ final class GuardedProxySelector extends ProxySelector {
         long now = System.currentTimeMillis();
         String key = source.id() + "|" + decision.title() + "|" + uri.getHost();
         Long previous = lastReportAt.put(key, now);
+        if (lastReportAt.size() > MAX_REPORT_KEYS) {
+            long cutoff = now - REPORT_SUPPRESS_MS * 2;
+            lastReportAt.entrySet().removeIf(entry -> entry.getValue() < cutoff);
+            if (lastReportAt.size() > MAX_REPORT_KEYS * 2) lastReportAt.clear();
+        }
         return previous == null || now - previous > REPORT_SUPPRESS_MS;
     }
 

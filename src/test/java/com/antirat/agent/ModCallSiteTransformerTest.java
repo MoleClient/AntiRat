@@ -42,6 +42,16 @@ class ModCallSiteTransformerTest {
     Path temporaryDirectory;
 
     @Test
+    void guardsMixinHandlersCopiedIntoMinecraftCredentialCarrier() {
+        byte[] transformed = ModCallSiteTransformer.transformCredentialCarrierBytes(credentialCarrierFixture());
+        List<String> calls = methodCalls(transformed);
+
+        assertTrue(calls.stream().anyMatch(value -> value.contains("RuntimeHooks.spoofCredentialMixinArgument")));
+        assertTrue(calls.stream().anyMatch(value -> value.contains("RuntimeHooks.directSessionTokenMethod")));
+        assertFalse(calls.stream().anyMatch(value -> value.contains("net.minecraft.client.User.getAccessToken")));
+    }
+
+    @Test
     void rewritesHighValueJdkCallSitesToRuntimeHooks() throws Exception {
         byte[] transformed = ModCallSiteTransformer.transformBytes(fixtureBytes());
         List<String> calls = methodCalls(transformed);
@@ -337,6 +347,33 @@ class ModCallSiteTransformerTest {
         method.visitInsn(Opcodes.RETURN);
         method.visitMaxs(3, 3);
         method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] credentialCarrierFixture() {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "net/minecraft/client/User", null,
+                "java/lang/Object", null);
+        MethodVisitor getter = writer.visitMethod(Opcodes.ACC_PUBLIC, "getAccessToken",
+                "()Ljava/lang/String;", null, null);
+        getter.visitCode();
+        getter.visitLdcInsn("fixture-token");
+        getter.visitInsn(Opcodes.ARETURN);
+        getter.visitMaxs(1, 1);
+        getter.visitEnd();
+
+        MethodVisitor handler = writer.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC,
+                "handler$abc123$tokenreader$onUserConstructed",
+                "(Ljava/lang/String;Ljava/lang/String;)V", null, null);
+        handler.visitCode();
+        handler.visitVarInsn(Opcodes.ALOAD, 0);
+        handler.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/client/User", "getAccessToken",
+                "()Ljava/lang/String;", false);
+        handler.visitInsn(Opcodes.POP);
+        handler.visitInsn(Opcodes.RETURN);
+        handler.visitMaxs(1, 3);
+        handler.visitEnd();
         writer.visitEnd();
         return writer.toByteArray();
     }

@@ -58,6 +58,8 @@ public final class RuntimeContainment {
         }
 
         boolean moved = entry.status() == ScanStatus.QUARANTINED;
+        boolean pendingRemoval = entry.status() == ScanStatus.QUARANTINE_PENDING;
+        boolean contained = moved || pendingRemoval;
         List<String> evidence = new ArrayList<>();
         evidence.add("The triggering action was blocked before the protected operation completed");
         evidence.add("All guarded capabilities for this mod are denied for the rest of this process");
@@ -66,19 +68,23 @@ public final class RuntimeContainment {
         if (!entry.message().isBlank()) evidence.add(entry.message());
 
         AntiRatRuntime.report(ThreatEvent.create(
-                moved ? ThreatType.MOD_QUARANTINED : ThreatType.QUARANTINE_FAILURE,
+                contained ? ThreatType.MOD_QUARANTINED : ThreatType.QUARANTINE_FAILURE,
                 RiskLevel.CRITICAL,
-                moved ? "Runtime threat contained and quarantined" : "Runtime threat blocked; quarantine failed",
+                moved ? "Runtime threat contained and quarantined"
+                        : pendingRemoval ? "Runtime threat contained; removal scheduled"
+                        : "Runtime threat blocked; quarantine failed",
                 moved
                         ? "AntiRat blocked the attempted action and moved the original JAR out of the mods folder. Its already-loaded code remains locked down until the game exits."
+                        : pendingRemoval
+                        ? "AntiRat blocked the attempted action, locked down the loaded code, made a verified quarantine copy, and scheduled the locked original for removal after exit."
                         : "AntiRat blocked the attempted action and locked down the mod, but could not move its original JAR.",
                 modId,
                 modName,
                 entry.originalPath(),
-                moved ? entry.quarantinePath() : entry.originalPath(),
-                moved,
+                contained ? entry.quarantinePath() : entry.originalPath(),
+                contained,
                 Math.max(97, result.score()),
-                moved
+                contained
                         ? "The next normal launch will omit this mod; do not restore it without independent review."
                         : "Close the game after saving and remove the named JAR before the next launch.",
                 evidence

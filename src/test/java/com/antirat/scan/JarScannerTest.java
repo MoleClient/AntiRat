@@ -206,6 +206,20 @@ class JarScannerTest {
     }
 
     @Test
+    void quarantinesBasicNetworkedMixinThatCapturesUserConstructorToken() throws Exception {
+        Path jar = createJar("user-token-mixin.jar", Map.of(
+                "fabric.mod.json", metadata("tokenreader", "Token Reader"),
+                "evil/UserMixin.class", userCredentialMixinBytes()
+        ));
+
+        ScanResult result = new JarScanner(AntiRatConfig.defaults()).scan(jar);
+
+        assertTrue(result.highConfidence(), result.toString());
+        assertTrue(result.quarantineRecommended());
+        assertTrue(result.deniedCapabilities().contains(Capability.MINECRAFT_SESSION));
+    }
+
+    @Test
     void readsHardDependenciesForSafeRelaunchCascade() throws Exception {
         Path jar = createJar("dependent.jar", Map.of(
                 "fabric.mod.json", "{\"id\":\"dependent\",\"name\":\"Dependent\",\"depends\":{\"ratlib\":\">=1\",\"minecraft\":\"*\"}}"
@@ -342,6 +356,31 @@ class JarScannerTest {
         method.visitInsn(Opcodes.POP);
         method.visitInsn(Opcodes.RETURN);
         method.visitMaxs(1, 1);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] userCredentialMixinBytes() {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "evil/UserMixin", null,
+                "java/lang/Object", null);
+        writer.visitField(Opcodes.ACC_PRIVATE, "accessToken", "Ljava/lang/String;", null, null).visitEnd();
+        writer.visitField(Opcodes.ACC_PRIVATE, "network", "Ljava/net/http/HttpClient;", null, null).visitEnd();
+        AnnotationVisitor mixin = writer.visitAnnotation("Lorg/spongepowered/asm/mixin/Mixin;", false);
+        AnnotationVisitor targets = mixin.visitArray("targets");
+        targets.visit(null, "net.minecraft.client.User");
+        targets.visitEnd();
+        mixin.visitEnd();
+        MethodVisitor method = writer.visitMethod(Opcodes.ACC_PRIVATE, "captureAccessToken",
+                "(Ljava/lang/String;)V", null, null);
+        AnnotationVisitor inject = method.visitAnnotation(
+                "Lorg/spongepowered/asm/mixin/injection/Inject;", false);
+        inject.visit("method", "<init>");
+        inject.visitEnd();
+        method.visitCode();
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(0, 2);
         method.visitEnd();
         writer.visitEnd();
         return writer.toByteArray();
